@@ -220,4 +220,107 @@ HttpServer类代表了一个Web服务器程序，它的代码如“例1.1”所�
 public static final String WEB_ROOT =System.getProperty("user.dir") + File.separator + "webroot";
 ```
 上面的代码中，有一个叫webroot文件夹，该文件夹不仅包含了所有的静态资源，还包含了一些Servlet，你可以用它们来进行测试。
-Raphael 2016-2-26 17:07:45 翻译到第15也中下。
+当请求一个静态资源时，你只用在你的浏览器地址栏中输入：
+http://machineName:port/staticResource
+上面地址中，machineName就是你向服务器发出请求时，服务器的名称或地址。如果你的服务器程序运行在本机，那machinename就可以使用localhost代替。staticResource是WEB_ROOT下的静态资源。
+例如，如果你的HttpServer运行在本机，你通过浏览器向它请求index.html资源时，可以在浏览器中输入如下地址：
+http://localhost:8080/index.html
+要停止该Web服务器程序是，你只用通过浏览器发送一条包含关闭命令字符串的URL即可。关闭命令字符串预先定义在了`HttpServer`类的`SHUTDOWN`静态变量中：
+```java
+private static final String SHUTDOWN_COMMAND = "/SHUTDOWN";
+```
+所以，当你要关闭服务器程序时，只用输入如下URL：
+http://localhost:8080/SHUTDOWN 
+接下来，让我们来探讨一下“列1.2”中的await方法。
+为什么命名为await，而不是wait？因为wait是`java.lang.Object`类的方法啦。
+`await`方法，首先创建了一个`ServerSocket`实例，接着就进入while循环。
+>```java
+>serverSocket = new ServerSocket(port, 1,InetAddress.getByName("127.0.0.1"));
+...
+// Loop waiting for a request
+while (!shutdown) {
+...
+}
+>```
+
+while循环内的代码将会一直阻塞在`ServerSocket`实例的`accept`方法上，直到有HTTP请求到达8080端口。
+```java
+socket = serverSocket.accept();
+```
+只要接收到HTTP请求，`await`将继续往下执行，从返回的`socket`对象处，获得`java.io.InputStream`与`java.io.OutputStream`，如下所示：
+```java
+input = socket.getInputStream();
+output = socket.getOutputStream();
+```
+紧接着，`await`将创建一个`ex01.pyrmont.Request`类的实例，并调用它的`parse`方法来解析收到的HTTP请求，从复杂的HTTP协议格式中，提取出信息。
+```java 
+// create Request object and parse
+Request request = new Request(input);
+request.parse ();
+```
+然后，`await`方法将创建一个`ex01.pyrmont.Response`对象，并把之前创建的Request对象传给它，并调用它的`sendStaticResource`方法来发送资源。
+最后，`await`方法调用Socket的close方法来关闭该Socket，即关闭连接。接下来，`await`方法对刚才HTTP请求的URI进行判断，判断URI字符串是否就是预先定义好的关闭命令字符串，如果是的话，就会跳出while，进而结束整个程序。如果不是的话，继续循环，直到有下一条HTTP请求到来。
+
+### Request类 ###
+类`ex01.pyrmont.Request`代表了HTTP请求。创建该类的实例时，需要在构造方法中传入一个`InputStream`对象，该对象是由负责跟客户端通信的Socket返回的。我们可以通过`InputStream`对象的任一跟“读”相关的方法中，得到HTTP请求的原始格式数据。
+Request类的代码如“例1.3”所示，它的两个方法，`parse`与`getUri`分别在“例1.4”与“例1.5”中给出。
+
+例1.3	Request类
+```java
+package ex01.pyrmont;
+import java.io.InputStream;
+import java.io.IOException;
+public class Request {
+private InputStream input;
+private String uri;
+public Request(InputStream input) {
+this.input = input;
+}
+public void parse() {
+...
+}
+private String parseUri(String requestString) { 
+...
+}
+public String getUri() {
+return uri;
+}
+}
+```
+
+例1.4 parse方法
+```java
+public void parse() {
+// Read a set of characters from the socket
+StringBuffer request = new StringBuffer(2048);
+int i;
+byte[] buffer = new byte[2048];
+try {
+i = input.read(buffer);
+}
+catch (IOException e) {
+e.printStackTrace();
+i = -1;
+}
+for (int j=0; j<i; j++) {
+request.append((char) buffer[j]);
+}
+System.out.print(request.toString());
+uri = parseUri(request.toString());
+}
+```
+
+例1.5 parseUri方法
+```java
+private String parseUri(String requestString) {
+int index1, index2;
+index1 = requestString.indexOf(' ');
+if (index1 != -1) {
+index2 = requestString.indexOf(' ', index1 + 1);
+if (index2 > index1)
+return requestString.substring(index1 + 1, index2);
+}
+return null;
+}
+```
+Raphael 2016-2-27 12:57:08 翻译到19页
