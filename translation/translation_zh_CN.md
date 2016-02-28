@@ -323,4 +323,154 @@ return requestString.substring(index1 + 1, index2);
 return null;
 }
 ```
-Raphael 2016-2-27 12:57:08 翻译到19页
+`parse`方法的作用是解析HTTP请求的原始格式数据，它的工作并不是很多。该方法从`InputStream`里读取字节流，并把它还原为HTTP请求格式，存储进`StringBuffer`变量， 然后，通过调用私有方法`parseUri`来进一步解析HTTP请求，得到请求的URI。公共方法`getUri`则是向外界返回URI变量内容。
+*注意	更多关于HTTP 原始请求数据的处理过程，将在第三章及以后的章节中展开。*
+要理解`parse`与`parseUri`方法是如何工作的，你需要之前章节中关于“超文本传输协议”的知识储备。本章中，我们暂时只讨论HTTP请求的第一行，姑且称为“请求行”吧。还记得它的格式吗？
+>方法(Method)——统一资源标识符(URI)——协议/版本
+
+上面的各个元素之间，使用空格分割开来。下面举个具体的例子：
+>GET /index.html HTTP/1.1
+
+`parse`方法从`InputStream`（HttpServer传过来的）中读取所有的字节流，并把它们存储在一个字节数组中`buffer`。然后，使用一个叫request的`StringBuffer`来从这些字节中还原出字符，并把最后组成的字符串传递给`parseUri`方法。
+`parseUri`方法首先找到第一个空格，与第二个空格的位置，接着截取出这两个位置之间的内容，就是URI。
+
+### Response类 ###
+类`ex01.pyrmont.Response`代表了一个HTTP响应。它的代码如“例1.6”所示。
+
+例1.6 Response类
+```java
+package ex01.pyrmont;
+
+import java.io.OutputStream;
+import java.io.IOException;
+import java.io.FileInputStream;
+import java.io.File;
+
+/*
+  HTTP Response = Status-Line
+    *(( general-header | response-header | entity-header ) CRLF)
+    CRLF
+    [ message-body ]
+    Status-Line = HTTP-Version SP Status-Code SP Reason-Phrase CRLF
+*/
+
+public class Response {
+
+  private static final int BUFFER_SIZE = 1024;
+  Request request;
+  OutputStream output;
+
+  public Response(OutputStream output) {
+    this.output = output;
+  }
+
+  public void setRequest(Request request) {
+    this.request = request;
+  }
+
+  public void sendStaticResource() throws IOException {
+    byte[] bytes = new byte[BUFFER_SIZE];
+    FileInputStream fis = null;
+    try {
+      File file = new File(HttpServer.WEB_ROOT, request.getUri());
+      if (file.exists()) {
+        fis = new FileInputStream(file);
+        int ch = fis.read(bytes, 0, BUFFER_SIZE);
+        while (ch!=-1) {
+          output.write(bytes, 0, ch);
+          ch = fis.read(bytes, 0, BUFFER_SIZE);
+        }
+      }
+      else {
+        // file not found
+        String errorMessage = "HTTP/1.1 404 File Not Found\r\n" +
+          "Content-Type: text/html\r\n" +
+          "Content-Length: 23\r\n" +
+          "\r\n" +
+          "<h1>File Not Found</h1>";
+        output.write(errorMessage.getBytes());
+      }
+    }
+    catch (Exception e) {
+      // thrown if cannot instantiate a File object
+      System.out.println(e.toString() );
+    }
+    finally {
+      if (fis!=null)
+        fis.close();
+    }
+  }
+}
+
+```
+首先注意一点，Response类的构造方法，接受的是一个`java.io.OutputStream`对象，如下所示。
+```java
+public Response(OutputStream output) {
+this.output = output;
+}
+```
+Response对象是HttpServer里的await方法创建的。await方法从socket处获得了OutputStream对象，并以此构造了Response。
+Response类有两个公共方法：`setRequest`与`sendStaticResource`。其中，`setRequest`方法用来为Response设置Request对象的引用。
+`sendStaticResource`则是用来发送类似HTML文件等静态资源的。该方法首先通过传入一个父路径与子路径给File类的构造方法，以此来实例化一个`java.io.File`对象。
+```java
+File file = new File(HttpServer.WEB_ROOT, request.getUri());
+```
+然后，会检查该file对象是否存在，如果存在的话，就会进一步通过该file对象来构造一个`java.io.FileInputStream`对象，然后，通过FileInputStream对象的read方法，读出指定长度的字节，并把这些字节写入OutputStream对象。注意，在本例中，静态资源的内容是被原模原样地发送给浏览器的。
+```java
+if (file.exists()) {
+        fis = new FileInputStream(file);
+        int ch = fis.read(bytes, 0, BUFFER_SIZE);
+        while (ch!=-1) {
+          output.write(bytes, 0, ch);
+          ch = fis.read(bytes, 0, BUFFER_SIZE);
+        }
+      }
+```
+
+如果指定文件不存在，`sendStaticResource`方法将会给浏览器发送一条“资源不存在”的错误信息。
+```java
+ // file not found
+        String errorMessage = "HTTP/1.1 404 File Not Found\r\n" +
+          "Content-Type: text/html\r\n" +
+          "Content-Length: 23\r\n" +
+          "\r\n" +
+          "<h1>File Not Found</h1>";
+        output.write(errorMessage.getBytes());
+```
+
+### 运行程序 ###
+在你的工作目录，编译你的java类，然后在命令行中输入：
+`java ex01.pyrmont.HttpServer`
+就可以启动服务器程序了。
+你可以在你的浏览器地址栏中输入
+>http://localhost:8080/index.html 
+
+来测试一下你的程序。
+一切正常的话，你将在浏览器中看到如下界面，图1.1。
+
+图1.1
+![](images/chapter1-1.png)
+
+同时，你会在控制台看到如下类似的信息：
+>GET /index.html HTTP/1.1
+Host: localhost:8080
+Connection: keep-alive
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.109 Safari/537.36
+Accept-Encoding: gzip, deflate, sdch
+Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4
+
+>GET /images/logo.gif HTTP/1.1
+Host: localhost:8080
+Connection: keep-alive
+Accept: image/webp,image/*,*/*;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.109 Safari/537.36
+Referer: http://localhost:8080/index.html
+Accept-Encoding: gzip, deflate, sdch
+Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4
+
+### 本章小结 ###
+在本章中，我们知道了一个简单的Web服务器程序是如何工作的。本章的服务器程序只有三个类，功能还并不完善，但是，却是一个很好的学习样例。在下一章中，我们将讨论如何处理动态内容。
+
+Raphael 2016-2-28 11:03:43 翻译到第25页。
