@@ -34,7 +34,7 @@ public class HttpServer {
     ServerSocket serverSocket = null;
     int port = 8080;
     try {
-      serverSocket =  new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"));
+      serverSocket =  new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"));//创建一个能最大容纳1个连接的Server端Socket，监听在本机的8080端口。
     }
     catch (IOException e) {
       e.printStackTrace();
@@ -47,16 +47,16 @@ public class HttpServer {
       InputStream input = null;
       OutputStream output = null;
       try {
-        socket = serverSocket.accept();
+        socket = serverSocket.accept();//该方法会一直阻塞，直到有请求到达本机8080端口。一旦有请求到达，立即创建一个Socket对象。
         input = socket.getInputStream();
         output = socket.getOutputStream();
 
         // create Request object and parse
-        Request request = new Request(input);
+        Request request = new Request(input);//将Socket对象的InputStream传给Request对象，使其解析出请求里的信息。
         request.parse();
 
         // create Response object
-        Response response = new Response(output);
+        Response response = new Response(output);//将Socket对象的OutputStream传给Response对象，使其能够向客户端发送信息。
         response.setRequest(request);
         response.sendStaticResource();
 

@@ -18,7 +18,7 @@ public class Request {
     int i;
     byte[] buffer = new byte[2048];
     try {
-      i = input.read(buffer);
+      i = input.read(buffer);//读出InputSteam里指定长度的字节，并把它们存进字节数组中。
     }
     catch (IOException e) {
       e.printStackTrace();

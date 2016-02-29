@@ -31,8 +31,8 @@ public class Response {
     byte[] bytes = new byte[BUFFER_SIZE];
     FileInputStream fis = null;
     try {
-      File file = new File(HttpServer.WEB_ROOT, request.getUri());
-      if (file.exists()) {
+      File file = new File(HttpServer.WEB_ROOT, request.getUri());//获取webroot目录下，指定的子文件（夹）
+      if (file.exists()) {//如果webroot目录下指定的文件存在，则读出文件内容，并利用OutputStream对象输出
         fis = new FileInputStream(file);
         int ch = fis.read(bytes, 0, BUFFER_SIZE);
         while (ch!=-1) {
