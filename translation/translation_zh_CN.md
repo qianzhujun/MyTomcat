@@ -473,4 +473,59 @@ Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4
 ### 本章小结 ###
 在本章中，我们知道了一个简单的Web服务器程序是如何工作的。本章的服务器程序只有三个类，功能还并不完善，但是，却是一个很好的学习样例。在下一章中，我们将讨论如何处理动态内容。
 
-Raphael 2016-2-28 11:03:43 翻译到第25页。
+## 第二章 一个简单的Servlet容器 ##
+### 概要 ###
+本章通过两个程序来介绍如何开发Servlet容器。第一个程序设计得很简单，方便大家理解Servlet容器是如何工作的。第二个程序只是稍微复杂了一点点。
+*注意 每章的Servlet容器程序都会比它的前一章复杂一点点，直到第17章，我们最终开发出一个完整的Servlet容器为止。*
+Servlet容器不仅能处理静态资源，而且能处理Servlet。你可以使用`PrimitiveServlet`来测试我们所开发的Servlet容器。`PrimitiveServlet`的代码如“例2.1”所示，你可以在webroot目录下找到它的class文件。更复杂的Servlet已经超越了本章的范围，不过没关系，你可以在接下来的章节中学习它们。
+
+例2.1 PrimitiveServlet.java
+```java
+import javax.servlet.*;
+import java.io.IOException;
+import java.io.PrintWriter;
+
+public class PrimitiveServlet implements Servlet {
+
+  public void init(ServletConfig config) throws ServletException {
+    System.out.println("init");
+  }
+
+  public void service(ServletRequest request, ServletResponse response)
+    throws ServletException, IOException {
+    System.out.println("from service");
+    PrintWriter out = response.getWriter();
+    out.println("Hello. Roses are red.");
+    out.print("Violets are blue.");
+  }
+
+  public void destroy() {
+    System.out.println("destroy");
+  }
+
+  public String getServletInfo() {
+    return null;
+  }
+  public ServletConfig getServletConfig() {
+    return null;
+  }
+
+}
+```
+
+我们所要探讨的两个容器程序都在`ex02.pyrmont`包里。要理解这两个容器程序是如何工作的，你需要首先对`javax.servlet.Servlet`接口很熟悉。所以，本章第一节，我们先来讨论一下这个接口，然后，再学习，当HTTP请求的是一个Servlet时，Servlet容器应该如何处理。
+
+### javax.servlet.Servlet 接口 ###
+`javax.servlet`与`javax.servlet.http`包里的类和接口，是Servlet编程得以实现的关键所在。在这些类和接口中，`javax.servlet.Servlet`接口是最重要的。所有Servlet必须实现该接口，或者继承实现了该接口的类。
+Servlet接口的5个方法签名如下：
+>public void init(ServletConfig config) throws ServletException ;
+>public void service(ServletRequest request, ServletResponse response) throws ServletException, java.io.IOException ;
+>public void destroy() public ServletConfig getServletConfig() ;
+>public java.lang.String getServletInfo();
+
+上面的5个方法中，`init`，`service`，`destroy`是Servlet的生命周期方法。`init`方法会在servlet类实例化后，被Servlet容器所调用。Servlet容器只会调用`init`方法一次，表明servlet类正在被启动。只有`init`执行成功后，servlet才能接收处理请求。servlet类的编写者，可以重写该方法。他们可以把只需要运行一次的初始化代码（例如，加载驱动类、变量赋值等）放到该方法里。如果不需要什么初始代码的话，不动该方法即可。
+当HTTP请求资源是servlet时，Servlet容器会调用该servlet类的`service`方法，来提供服务。Servlet容器传给`service`方法一个`javax.servlet.ServletRequest`对象与`javax.servlet.ServletResponse`对象。`ServletRequest`对象包含有客户端的HTTP请求信息。`ServletResponse`对象用了封装servlet的响应。在servlet的生命周期中，`service`方法可以被调用无数次。（只要有针对该servlet的请求，就会被调用。译注）
+当Servlet容器要移除一个servlet服务时，会首先调用该servlet的`destroy`方法。这种情况，通常发生在关闭Servlet 容器程序时，或者Servlet容器需要更多的内存空间时。Servlet容器会等到所有运行该servlet的`service`方法的线程退出或超时后，才会调用servlet的`destroy`方法。Servlet容器调用一个servlet的`destroy`方法后，就意味着该servlet已经被移除了，此后，不再会调用它的`service`方法。`destroy`方法被调用后，该servlet占用的所有资源（例如，内存、文件、线程等）都将被回收，同时，servlet的持久化状态会被更新。
+在本章中，你可以使用“例2.1”的`PrimitiveServlet`类来进行测试。`PrimitiveServlet`类实现了`javax.servlet.Servlet`接口，同时实现了Servlet接口的5个方法。`PrimitiveServlet`类的功能很简单，每次`init`，`service`，或者 `destroy`方法被调用时，它都会在控制台打印出方法的名称。同时，`service`还会利用从`ServletResponse`对象处获得的`PrintWriter`向客户端输出信息。
+
+Raphael 2016-2-29 11:20:59 翻译至27页。
