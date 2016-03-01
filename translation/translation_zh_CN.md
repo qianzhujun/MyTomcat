@@ -529,3 +529,192 @@ Servlet接口的5个方法签名如下：
 在本章中，你可以使用“例2.1”的`PrimitiveServlet`类来进行测试。`PrimitiveServlet`类实现了`javax.servlet.Servlet`接口，同时实现了Servlet接口的5个方法。`PrimitiveServlet`类的功能很简单，每次`init`，`service`，或者 `destroy`方法被调用时，它都会在控制台打印出方法的名称。同时，`service`还会利用从`ServletResponse`对象处获得的`PrintWriter`向客户端输出信息。
 
 Raphael 2016-2-29 11:20:59 翻译至27页。
+## 第二章 一个简单的Servlet容器 ##
+### 概要 ###
+本章通过两个程序来介绍如何开发Servlet容器。第一个程序设计得很简单，方便大家理解Servlet容器是如何工作的。第二个程序只是稍微复杂了一点点。
+*注意 每章的Servlet容器程序都会比它的前一章复杂一点点，直到第17章，我们最终开发出一个完整的Servlet容器为止。*
+Servlet容器不仅能处理静态资源，而且能处理Servlet。你可以使用`PrimitiveServlet`来测试我们所开发的Servlet容器。`PrimitiveServlet`的代码如“例2.1”所示，你可以在webroot目录下找到它的class文件。更复杂的Servlet已经超越了本章的范围，不过没关系，你可以在接下来的章节中学习它们。
+
+例2.1 PrimitiveServlet.java
+```java
+import javax.servlet.*;
+import java.io.IOException;
+import java.io.PrintWriter;
+
+public class PrimitiveServlet implements Servlet {
+
+  public void init(ServletConfig config) throws ServletException {
+    System.out.println("init");
+  }
+
+  public void service(ServletRequest request, ServletResponse response)
+    throws ServletException, IOException {
+    System.out.println("from service");
+    PrintWriter out = response.getWriter();
+    out.println("Hello. Roses are red.");
+    out.print("Violets are blue.");
+  }
+
+  public void destroy() {
+    System.out.println("destroy");
+  }
+
+  public String getServletInfo() {
+    return null;
+  }
+  public ServletConfig getServletConfig() {
+    return null;
+  }
+
+}
+```
+
+我们所要探讨的两个容器程序都在`ex02.pyrmont`包里。要理解这两个容器程序是如何工作的，你需要首先对`javax.servlet.Servlet`接口很熟悉。所以，本章第一节，我们先来讨论一下这个接口，然后，再学习，当HTTP请求的是一个Servlet时，Servlet容器应该如何处理。
+
+### javax.servlet.Servlet 接口 ###
+`javax.servlet`与`javax.servlet.http`包里的类和接口，是Servlet编程得以实现的关键所在。在这些类和接口中，`javax.servlet.Servlet`接口是最重要的。所有Servlet必须实现该接口，或者继承实现了该接口的类。
+Servlet接口的5个方法签名如下：
+>public void init(ServletConfig config) throws ServletException ;
+>public void service(ServletRequest request, ServletResponse response) throws ServletException, java.io.IOException ;
+>public void destroy() public ServletConfig getServletConfig() ;
+>public java.lang.String getServletInfo();
+
+上面的5个方法中，`init`，`service`，`destroy`是Servlet的生命周期方法。`init`方法会在servlet类实例化后，被Servlet容器所调用。Servlet容器只会调用`init`方法一次，表明servlet类正在被启动。只有`init`执行成功后，servlet才能接收处理请求。servlet类的编写者，可以重写该方法。他们可以把只需要运行一次的初始化代码（例如，加载驱动类、变量赋值等）放到该方法里。如果不需要什么初始代码的话，不动该方法即可。
+当HTTP请求资源是servlet时，Servlet容器会调用该servlet类的`service`方法，来提供服务。Servlet容器传给`service`方法一个`javax.servlet.ServletRequest`对象与`javax.servlet.ServletResponse`对象。`ServletRequest`对象包含有客户端的HTTP请求信息。`ServletResponse`对象用了封装servlet的响应。在servlet的生命周期中，`service`方法可以被调用无数次。（只要有针对该servlet的请求，就会被调用。译注）
+当Servlet容器要移除一个servlet服务时，会首先调用该servlet的`destroy`方法。这种情况，通常发生在关闭Servlet 容器程序时，或者Servlet容器需要更多的内存空间时。Servlet容器会等到所有运行该servlet的`service`方法的线程退出或超时后，才会调用servlet的`destroy`方法。Servlet容器调用一个servlet的`destroy`方法后，就意味着该servlet已经被移除了，此后，不再会调用它的`service`方法。`destroy`方法被调用后，该servlet占用的所有资源（例如，内存、文件、线程等）都将被回收，同时，servlet的持久化状态会被更新。
+在本章中，你可以使用“例2.1”的`PrimitiveServlet`类来进行测试。`PrimitiveServlet`类实现了`javax.servlet.Servlet`接口，同时实现了Servlet接口的5个方法。`PrimitiveServlet`类的功能很简单，每次`init`，`service`，或者 `destroy`方法被调用时，它都会在控制台打印出方法的名称。同时，`service`还会利用从`ServletResponse`对象处获得的`PrintWriter`向客户端输出信息。
+
+### 程序1 ###
+现在，让我们以Servlet容器的角度来审视下如何进行Servlet编程。简单的讲，一个完整的Servlet容器，能为HTTP请求（请求的是servlet）提供如下功能：
+-	当servlet第一次被请求提供服务时，Servlet容器将该servlet的class文件载入jvm，并调用它的`init`方法（只会调用一次）。
+-	为每个请求创建一个`javax.servlet.ServletRequest`实例与`javax.servlet.ServletResponse`实例。
+-	调用的servlet的`service`方法，并传入`ServletRequest`与`ServletResponse`对象。
+-	当servlet被关闭时，调用servlet的`destroy`方法，之后，把servlet类从jvm里卸载掉。
+
+本章第一个Servlet容器程序功能并不完善。因此，它只能运行很简单的servlet，并且不会调用servlet的`init`方法与`destroy`方法。相反，它提供如下功能：
+-	等待HTTP请求的到达。
+-	创建`ServletRequest`与`ServletResponse`对象。
+-	如果请求的是静态资源，则会调用`StaticResourceProcessor`实例的`process`方法，并传入ServletRequest对象与ServletResponse对象。
+-	如果请求的是servlet资源，则把servlet的class文件载入进jvm，并调用`service`方法，同时传入ServletRequest对象与ServletResponse对象。
+
+注意，在第一个程序中，每次请求servlet资源时，Servlet容器都会把该servlet载入一次。（这只是雏形，完善的Servlet容器肯定不会这样干，译注）
+第一个程序由6个类组成：
+-	HttpServer1
+-	Request
+-	Response
+-	StaticResourceProcessor
+-	ServletProcessor1
+-	Constants
+
+图2.1 展示了第一个程序的UML。
+
+图2.1
+![](images/chapter2-1.png)
+
+第一个程序的入口点是`HttpServer1`类的`main`方法。它创建了一个`HttpServer1`对象，并调用对象的`await`方法。`await`方法一直等待HTTP请求的到来，并为每个HTTP请求创建一个Request对象与Response对象，然后，根据HTTP请求的资源类型（静态还是servlet），将Request对象与Response对象传给`StaticResourceProcessor`实例或`ServletProcessor`实例。
+`Constants`类里存放的是会被其它类引用的静态变量`WEB_ROOT`,该变量是final修饰的最终变量。`WEB_ROOT`变量指出了`PrimitiveServlet`类的位置与静态资源的位置。
+`HttpServer1`实例将会一直等待请求的到来并处理它们，直到接收到关闭命令为止。关闭命令字符串跟第一章的是相同的。
+接下来的几个小节中，我们将逐一探讨这6个类。
+
+### HttpServer1 类 ###
+本章中的`HttpServer1`类，与第一章中的`HttpServer`类区别并不是很大。但是，本章中的`HttpServer1`类不仅能处理静态资源，还能处理servlet资源。要访问静态资源，你只用在浏览器中输入如下类似的URL：
+>http://machineName:port/staticResource
+ 
+这就是我们在第一章中请求静态资源时的写法，还记得吗？
+要访问一个servlet资源时，你需要输入如下格式的地址：
+> http://machineName:port/servlet/servletClass 
+
+因此，当你在浏览器中请求本机服务器上的`PrimitiveServlet`时，你需要输入如下URL
+> http://localhost:8080/servlet/PrimitiveServlet 
+
+Servlet容器能提供`PrimitiveServlet`，但是，当你请求其它servlet时，例如，`ModernServlet`，则会得到一个错误，因为Servlet容器暂时还不能提供`ModernServlet`，没关系，我们将在另一章中也实现提供`ModernServlet`功能。
+
+`HttpServer1`类的代码如“例2.2”所示
+
+例2.2	HttpServer1类
+```java
+package ex02.pyrmont;
+
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.net.InetAddress;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.IOException;
+
+public class HttpServer1 {
+
+  /** WEB_ROOT is the directory where our HTML and other files reside.
+   *  For this package, WEB_ROOT is the "webroot" directory under the working
+   *  directory.
+   *  The working directory is the location in the file system
+   *  from where the java command was invoked.
+   */
+  // shutdown command
+  private static final String SHUTDOWN_COMMAND = "/SHUTDOWN";
+
+  // the shutdown command received
+  private boolean shutdown = false;
+
+  public static void main(String[] args) {
+    HttpServer1 server = new HttpServer1();
+    server.await();
+  }
+
+  public void await() {
+    ServerSocket serverSocket = null;
+    int port = 8080;
+    try {
+      serverSocket =  new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"));
+    }
+    catch (IOException e) {
+      e.printStackTrace();
+      System.exit(1);
+    }
+
+    // Loop waiting for a request
+    while (!shutdown) {
+      Socket socket = null;
+      InputStream input = null;
+      OutputStream output = null;
+      try {
+        socket = serverSocket.accept();
+        input = socket.getInputStream();
+        output = socket.getOutputStream();
+
+        // create Request object and parse
+        Request request = new Request(input);
+        request.parse();
+
+        // create Response object
+        Response response = new Response(output);
+        response.setRequest(request);
+
+        // check if this is a request for a servlet or a static resource
+        // a request for a servlet begins with "/servlet/"
+        if (request.getUri().startsWith("/servlet/")) {
+          ServletProcessor1 processor = new ServletProcessor1();
+          processor.process(request, response);
+        }
+        else {
+          StaticResourceProcessor processor = new StaticResourceProcessor();
+          processor.process(request, response);
+        }
+
+        // Close the socket
+        socket.close();
+        //check if the previous URI is a shutdown command
+        shutdown = request.getUri().equals(SHUTDOWN_COMMAND);
+      }
+      catch (Exception e) {
+        e.printStackTrace();
+        System.exit(1);
+      }
+    }
+  }
+}
+
+```
+上诉代码中，`await`方法只有在收到停止命令时，才会结束，否则，一直等待HTTP请求。例2.2中的`await`方法与第一章中的`await`方法有何不同？不同的地方在于，例2.2中的`await`方法，能根据请求资源的不同，而把Request传给`StaticResourceProcessor`对象或`ServletProcessor`对象。如果Request的URI中包含`/servlet/`字符串，则会把该Request传给`ServletProcessor`对象，否则，传给`StaticResourceProcessor`对象。
+
+Raphael 2016-2-29 21:10:35 翻译到32页。
