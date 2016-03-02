@@ -1488,8 +1488,64 @@ String servletName = uri.substring(uri.lastIndexOf("/") + 1);
 ```java
 public URLClassLoader(URL[] urls);
 ```
-其中，`urls`是由URL对象组成的数组。这些URL对象指出了，当URLClassLoader类加载器要加载一个类时，应该去什么地方搜索类文件。任何以文件分隔符（File.separator，windows系统为\，Unix系统为/）结尾的URL，代表的都是目录（directory）。否则，URL都被认为代表的是一个jar包（如果url指向的是网络，则会在必要的时候下载下来）。
+其中，`urls`是由URL对象组成的数组。这些URL对象指出了，当URLClassLoader类加载器要加载一个类时，应该去什么地方搜索类文件。任何以反斜杠`/`结尾的URL，代表的都是目录（directory）。否则，URL都被认为代表的是一个jar包（如果url指向的是网络，则会在必要的时候下载下来）。
 
 *注意 在Servlet容器中，类加载器搜索servlet类文件的位置，被称为“仓库”*
 
-Raphael 2016-3-1 22:25:44 翻译到41页。
+在本章的程序中，类加载器只用搜索工作目录下的`webroot`这一个位置。因此，我们首先创建了一个长度为1的URL数组。URL类提供了很多的构造方法来创建实例。在这里，我们使用的构造方法跟Tomcat里的一样：
+> `public URL(URL context, java.lang.String spec, URLStreamHandler hander)
+throws MalformedURLException`
+
+在这个构造方法中，你只用给第二个参数`spec`传入一个指定路径的字符串即可，第一个与第三个参数都传入null。但是，URL还有另外一个构造方法：
+> `public URL(java.lang.String protocol, java.lang.String host,
+java.lang.String file) throws MalformedURLException`
+
+所以，当你只给第二个参数传入值的话，编译器就不知道你到底调用的是哪一个构造方法。为了避免这种问题，你可以明确指定第三个参数的类型，即使它的值为null：
+```java
+URLStreamHandler streamHandler = null;
+new URL(null, aString, streamHandler);
+```
+在第二个构造方法中，通过指定协议，以及协议对应的指定文件（夹），就能构造出一个URL实例了。例如：
+`String repository = (new URL("file", null,
+classPath.getCanonicalPath() + File.separator)).toString() ;`
+
+好了，现在让我们来看看创建类加载器的完整过程：
+```java
+// create a URLClassLoader
+URL[] urls = new URL[1];
+URLStreamHandler streamHandler = null;
+File classPath = new File(Constants.WEB_ROOT);
+String repository = (new URL("file", null,
+classPath.getCanonicalPath() + File.separator)).toString() ;
+urls[0] = new URL(null, repository, streamHandler);
+loader = new URLClassLoader(urls);
+```
+*注意 上面的代码中，获取`repository`变量的内容时，借鉴了` org.apache.catalina.startup.ClassLoaderFactory`的`createClassLoader`方法，同样的，`URL`借鉴了`org.apache.catalina.loader.StandardClassLoader`类的`addRepository`方法。别担心，在以后的章节中，我们再来讨论这两个类。*
+
+获得类加载器之后，我们就可以调用它的`loadClass`方法，来加载servlet类了：
+```java
+Class myClass = null;
+try {
+myClass = loader.loadClass(servletName);
+}
+catch (ClassNotFoundException e) {
+System.out.println(e.toString());
+} 
+```
+接下来，`process`方法创建了一个servlet的实例，强制转换为`javax.servlet.Servlet`后，调用了它的`service`方法来提供服务：
+```java
+Servlet servlet = null;
+try {
+servlet = (Servlet) myClass.newInstance();
+servlet.service((ServletRequest) request,
+(ServletResponse) response);
+}
+catch (Exception e) {
+System.out.println(e.toString());
+}
+catch (Throwable e) {
+System.out.println(e.toString());
+}
+```
+
+### 运行程序 ###
