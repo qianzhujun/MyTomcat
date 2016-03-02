@@ -1488,7 +1488,7 @@ String servletName = uri.substring(uri.lastIndexOf("/") + 1);
 ```java
 public URLClassLoader(URL[] urls);
 ```
-其中，`urls`是由URL对象组成的数组。这些URL对象指出了，当URLClassLoader类加载器要加载一个类时，应该去什么地方搜索类文件。任何以文件分隔符（File.separator，windows系统为\，Unix系统为/）结尾的URL，代表的都是目录（directory）。否则，URL都被认为代表的是一个jar包（如果url指向的是网络，则会在必要的时候下载下来）。
+其中，`urls`是由URL对象组成的数组。这些URL对象指出了，当URLClassLoader类加载器要加载一个类时，应该去什么地方搜索类文件。任何以反斜杠`/`结尾的URL，代表的都是目录（directory）。否则，URL都被认为代表的是一个jar包（如果url指向的是网络，则会在必要的时候下载下来）。
 
 *注意 在Servlet容器中，类加载器搜索servlet类文件的位置，被称为“仓库”*
 
