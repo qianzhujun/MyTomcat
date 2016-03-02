@@ -1093,3 +1093,403 @@ public class ServletProcessor1 {
 }
 ```
 Raphael 2016-3-1 11:03:13 翻译到40页下
+### Request 类 ###
+servlet的`service`方法从Servlet容器处接收两个对象，一个是`javax.servlet.ServletRequest`对象，一个是`javax.servlet.ServletResponse`对象。即所谓的，Servlet容器为每个HTTP请求构造一个`ServletRequest`对象与`ServletResponse`对象，并把它们传给`service`方法。
+我们用`ex02.pyrmont.Request`类来代表传给`service`方法的`ServletRequest`对象。`ServletRequest`是一个接口，所以我们需要实现该接口。别担心，在这里我们只是简单的实现接口的部分方法，在之后的章节中，我们才会完整的来实现其它方法。对于有些方法，我们让它保持为空就行，如果需要返回值，就返回一个null，正如，“例2.3”所示的一样。
+
+例2.3	Request类
+```java
+package ex02.pyrmont;
+
+import java.io.InputStream;
+import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.UnsupportedEncodingException;
+import java.util.Enumeration;
+import java.util.Locale;
+import java.util.Map;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletInputStream;
+import javax.servlet.ServletRequest;
+
+
+public class Request implements ServletRequest {
+
+  private InputStream input;
+  private String uri;
+
+  public Request(InputStream input) {
+    this.input = input;
+  }
+
+  public String getUri() {
+    return uri;
+  }
+
+  private String parseUri(String requestString) {
+    int index1, index2;
+    index1 = requestString.indexOf(' ');
+    if (index1 != -1) {
+      index2 = requestString.indexOf(' ', index1 + 1);
+      if (index2 > index1)
+        return requestString.substring(index1 + 1, index2);
+    }
+    return null;
+  }
+
+  public void parse() {
+    // Read a set of characters from the socket
+    StringBuffer request = new StringBuffer(2048);
+    int i;
+    byte[] buffer = new byte[2048];
+    try {
+      i = input.read(buffer);
+    }
+    catch (IOException e) {
+      e.printStackTrace();
+      i = -1;
+    }
+    for (int j=0; j<i; j++) {
+      request.append((char) buffer[j]);
+    }
+    System.out.print(request.toString());
+    uri = parseUri(request.toString());
+  }
+
+  /* implementation of the ServletRequest*/
+  public Object getAttribute(String attribute) {
+    return null;
+  }
+
+  public Enumeration getAttributeNames() {
+    return null;
+  }
+
+  public String getRealPath(String path) {
+    return null;
+  }
+
+  public RequestDispatcher getRequestDispatcher(String path) {
+    return null;
+  }
+
+  public boolean isSecure() {
+    return false;
+  }
+
+  public String getCharacterEncoding() {
+    return null;
+  }
+
+  public int getContentLength() {
+    return 0;
+  }
+
+  public String getContentType() {
+    return null;
+  }
+
+  public ServletInputStream getInputStream() throws IOException {
+    return null;
+  }
+
+  public Locale getLocale() {
+    return null;
+  }
+
+  public Enumeration getLocales() {
+    return null;
+  }
+
+  public String getParameter(String name) {
+    return null;
+  }
+
+  public Map getParameterMap() {
+    return null;
+  }
+
+  public Enumeration getParameterNames() {
+    return null;
+  }
+
+  public String[] getParameterValues(String parameter) {
+    return null;
+  }
+
+  public String getProtocol() {
+    return null;
+  }
+
+  public BufferedReader getReader() throws IOException {
+    return null;
+  }
+
+  public String getRemoteAddr() {
+    return null;
+  }
+
+  public String getRemoteHost() {
+    return null;
+  }
+
+  public String getScheme() {
+   return null;
+  }
+
+  public String getServerName() {
+    return null;
+  }
+
+  public int getServerPort() {
+    return 0;
+  }
+
+  public void removeAttribute(String attribute) {
+  }
+
+  public void setAttribute(String key, Object value) {
+  }
+
+  public void setCharacterEncoding(String encoding)
+    throws UnsupportedEncodingException {
+  }
+
+}
+```
+可以看到，在本章的`Request`类里，仍然有第一章中介绍的`parse`与`getUri`方法。
+
+### Response 类###
+`ex02.pyrmont.Response`类代表了一个响应。同样的，我们只是部分实现`javax.servlet.ServletResponse`接口。如下，例2.4所示。
+
+例2.4
+```java
+package ex02.pyrmont;
+
+import java.io.OutputStream;
+import java.io.IOException;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.File;
+import java.io.PrintWriter;
+import java.util.Locale;
+import javax.servlet.ServletResponse;
+import javax.servlet.ServletOutputStream;
+
+public class Response implements ServletResponse {
+
+  private static final int BUFFER_SIZE = 1024;
+  Request request;
+  OutputStream output;
+  PrintWriter writer;
+
+  public Response(OutputStream output) {
+    this.output = output;
+  }
+
+  public void setRequest(Request request) {
+    this.request = request;
+  }
+
+  /* This method is used to serve a static page */
+  public void sendStaticResource() throws IOException {
+    byte[] bytes = new byte[BUFFER_SIZE];
+    FileInputStream fis = null;
+    try {
+      /* request.getUri has been replaced by request.getRequestURI */
+      File file = new File(Constants.WEB_ROOT, request.getUri());
+      fis = new FileInputStream(file);
+      /*
+         HTTP Response = Status-Line
+           *(( general-header | response-header | entity-header ) CRLF)
+           CRLF
+           [ message-body ]
+         Status-Line = HTTP-Version SP Status-Code SP Reason-Phrase CRLF
+      */
+      int ch = fis.read(bytes, 0, BUFFER_SIZE);
+      while (ch!=-1) {
+        output.write(bytes, 0, ch);
+        ch = fis.read(bytes, 0, BUFFER_SIZE);
+      }
+    }
+    catch (FileNotFoundException e) {
+      String errorMessage = "HTTP/1.1 404 File Not Found\r\n" +
+        "Content-Type: text/html\r\n" +
+        "Content-Length: 23\r\n" +
+        "\r\n" +
+        "<h1>File Not Found</h1>";
+      output.write(errorMessage.getBytes());
+    }
+    finally {
+      if (fis!=null)
+        fis.close();
+    }
+  }
+
+
+  /** implementation of ServletResponse  */
+  public void flushBuffer() throws IOException {
+  }
+
+  public int getBufferSize() {
+    return 0;
+  }
+
+  public String getCharacterEncoding() {
+    return null;
+  }
+
+  public Locale getLocale() {
+    return null;
+  }
+
+  public ServletOutputStream getOutputStream() throws IOException {
+    return null;
+  }
+
+  public PrintWriter getWriter() throws IOException {
+    // autoflush is true, println() will flush,
+    // but print() will not.
+    writer = new PrintWriter(output, true);
+    return writer;
+  }
+
+  public boolean isCommitted() {
+    return false;
+  }
+
+  public void reset() {
+  }
+
+  public void resetBuffer() {
+  }
+
+  public void setBufferSize(int size) {
+  }
+
+  public void setContentLength(int length) {
+  }
+
+  public void setContentType(String type) {
+  }
+
+  public void setLocale(Locale locale) {
+  }
+}
+```
+在`getWriter`方法中，传递给`PrintWriter`构造器的第二个参数是一个布尔类型，它代表是否自动把缓存区的内容发送出去。如果为true的话，每次调用`PrintWriter`的`println`方法时，都会立即把缓存区的内容发送出去（但是，`print`方法不会）。
+因此，这个`Response`类就有一个小bug。如果刚好在servlet里`service`方法的最后一行调用了`PrintWriter`的`print`方法，**那`print`方法里的内容就不会被发送到客户端**！没关系，我们在后面的章节里又来修复这个问题。
+同样的，本章里的`Response`仍然有第一章中讨论的`sendStaticResource`方法。
+
+### StaticResourceProcessor 类###
+`ex02.pyrmont.StaticResourceProcessor`类的作用是，为针对静态资源的HTTP请求提供服务。它只有一个`process`方法。详细代码，如“例2.5”所示。
+
+例2.5	StaticResourceProcessor类
+```java
+package ex02.pyrmont;
+
+import java.io.IOException;
+
+public class StaticResourceProcessor {
+
+  public void process(Request request, Response response) {
+    try {
+      response.sendStaticResource();
+    }
+    catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+}
+```
+`process`方法接收两个对象，一个`Request`，一个`Response`。在方法的内部，只是简单的调用了`Response`对象的`sendStaticResource`方法。
+
+### ServletProcessor1 类 ###
+`ex02.pyrmont.ServletProcessor1`类专门服务于针对servlet资源的请求。代码如“例2.6”所示。
+
+例2.6 ServletProcessor1类
+```java
+package ex02.pyrmont;
+
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.net.URLStreamHandler;
+import java.io.File;
+import java.io.IOException;
+import javax.servlet.Servlet;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+
+public class ServletProcessor1 {
+
+  public void process(Request request, Response response) {
+
+    String uri = request.getUri();
+    String servletName = uri.substring(uri.lastIndexOf("/") + 1);
+    URLClassLoader loader = null;
+
+    try {
+      // create a URLClassLoader
+      URL[] urls = new URL[1];
+      URLStreamHandler streamHandler = null;
+      File classPath = new File(Constants.WEB_ROOT);
+      // the forming of repository is taken from the createClassLoader method in
+      // org.apache.catalina.startup.ClassLoaderFactory
+      String repository = (new URL("file", null, classPath.getCanonicalPath() + File.separator)).toString() ;
+      // the code for forming the URL is taken from the addRepository method in
+      // org.apache.catalina.loader.StandardClassLoader class.
+      urls[0] = new URL(null, repository, streamHandler);
+      loader = new URLClassLoader(urls);
+    }
+    catch (IOException e) {
+      System.out.println(e.toString() );
+    }
+    Class myClass = null;
+    try {
+      myClass = loader.loadClass(servletName);
+    }
+    catch (ClassNotFoundException e) {
+      System.out.println(e.toString());
+    }
+
+    Servlet servlet = null;
+
+    try {
+      servlet = (Servlet) myClass.newInstance();
+      servlet.service((ServletRequest) request, (ServletResponse) response);
+    }
+    catch (Exception e) {
+      System.out.println(e.toString());
+    }
+    catch (Throwable e) {
+      System.out.println(e.toString());
+    }
+
+  }
+}
+```
+可以发现`ServletProcessor1`类是相当的简单，只有一个`process`方法。通过传入的`ServletRequest`对象，我们能获取得到当前请求的URI：
+```java
+String uri = request.getUri();
+```
+还记得本章中，针对servlet资源的请求格式吗？
+> /servlet/servletName
+
+其中，`servletName`就是servlet类的类名。
+为了把servlet类载入jvm中，首先，我们需要把servlet的类名从URI中剥离出来。我们可以使用如下代码：
+```java
+String servletName = uri.substring(uri.lastIndexOf("/") + 1);
+```
+其次，我们需要创建一个类加载器（class loader），并告诉它，去哪里寻找我们的servlet类文件。在本例中，类加载器会去`Constants.WEB_ROOT`常量代表的位置中寻找，即`webroot`目录下。
+
+*注意 关于类加载器（  Class loaders）,我们将在第八章中详细讨论*
+
+在这里，我们使用的是`java.net.URLClassLoader`类加载器，它是`java.lang.ClassLoader`的间接子类（类加载器分为父类加载器、根类加载器，译注）。实例化`URLClassLoader`后，就可以调用它的`loadClass`方法加载类了。`URLClassLoader`的构造方法很简单，如下：
+```java
+public URLClassLoader(URL[] urls);
+```
+其中，`urls`是由URL对象组成的数组。这些URL对象指出了，当URLClassLoader类加载器要加载一个类时，应该去什么地方搜索类文件。任何以文件分隔符（File.separator，windows系统为\，Unix系统为/）结尾的URL，代表的都是目录（directory）。否则，URL都被认为代表的是一个jar包（如果url指向的是网络，则会在必要的时候下载下来）。
+
+*注意 在Servlet容器中，类加载器搜索servlet类文件的位置，被称为“仓库”*
+
+Raphael 2016-3-1 22:25:44 翻译到41页。
