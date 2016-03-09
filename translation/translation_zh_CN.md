@@ -1549,3 +1549,18 @@ System.out.println(e.toString());
 ```
 
 ### 运行程序 ###
+在Windows上运行该程序时，请在命令行中输入如下指令（用eclipse开发，不用这么麻烦，译注）：
+> java -classpath ./lib/servlet.jar;./ ex02.pyrmont.HttpServer1
+
+在Linux上，则输入：
+> java -classpath ./lib/servlet.jar:./ ex02.pyrmont.HttpServer1
+
+好了，接下来让我们在浏览器中来测试一下。
+在浏览器中输入
+> http://localhost:8080/index.html 
+或
+> http://localhost:8080/servlet/PrimitiveServlet 
+
+当请求`PrimitiveServlet`时，你会发现浏览器显示出**Hello. Roses are red.**这几个字，但却不会显示**Violets are blue.**这几个字。因为在`PrimitiveServlet`中，只有第一行字被发送给了客户端。我们将在第三章修正这个问题。
+
+### 程序2 ###
