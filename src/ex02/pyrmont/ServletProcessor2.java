@@ -9,7 +9,7 @@ import javax.servlet.Servlet;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 
-public class ServletProcessor1 {
+public class ServletProcessor2 {
 
   public void process(Request request, Response response) {
 
@@ -20,39 +20,33 @@ public class ServletProcessor1 {
     try {
       // create a URLClassLoader
       URL[] urls = new URL[1];
-      URLStreamHandler streamHandler = null;//之所以使用这个空对象，是因为直接使用new URL(null, repository, null)的话，编译器根本不知道你调用的到底是哪个构造方法。
+      URLStreamHandler streamHandler = null;
       File classPath = new File(Constants.WEB_ROOT);
       // the forming of repository is taken from the createClassLoader method in
       // org.apache.catalina.startup.ClassLoaderFactory
-      //repository的这种取得形式，来自org.apache.catalina.startup.ClassLoaderFactory的createClassLoader方法。
       String repository = (new URL("file", null, classPath.getCanonicalPath() + File.separator)).toString() ;
       // the code for forming the URL is taken from the addRepository method in
       // org.apache.catalina.loader.StandardClassLoader class.
-      //URL的取得形式，同样来自Tomcat。
       urls[0] = new URL(null, repository, streamHandler);
-      loader = new URLClassLoader(urls);//通过URL获取类加载器
+      loader = new URLClassLoader(urls);
     }
     catch (IOException e) {
       System.out.println(e.toString() );
     }
     Class myClass = null;
     try {
-      myClass = loader.loadClass(servletName);//类加载器载入具体的servlet
+      myClass = loader.loadClass(servletName);
     }
     catch (ClassNotFoundException e) {
       System.out.println(e.toString());
     }
 
     Servlet servlet = null;
-
+    RequestFacade requestFacade = new RequestFacade(request);//这里使用的是门面。就算servlet的编写者知道传入的ServletRequest是RequestFacade，它也只能操作RequestFacade的公共方法。不会再像原来那样能操作Request对象的parseURI方法了。
+    ResponseFacade responseFacade = new ResponseFacade(response);
     try {
-      servlet = (Servlet) myClass.newInstance();//强制转换为所有servlet的父类
-      
-      /**
-       * 下面这句代码有个安全隐患。如果servlet开发者知道，传入的ServletRequest的运行时类型是ex02.pyrmont。Request的话，就能将ServletRequest对象转换为真正的 ex02.pyrmont。Request对象，如此一来，开发者就能操作容器里的parseURI方法了。这是一个非常严重的后果。
-       * 这个漏洞将在ServletProcessor2里修复。
-       */
-      servlet.service((ServletRequest) request, (ServletResponse) response);//调用servlet的service方法提供服务。
+      servlet = (Servlet) myClass.newInstance();
+      servlet.service((ServletRequest) requestFacade, (ServletResponse) responseFacade);
     }
     catch (Exception e) {
       System.out.println(e.toString());

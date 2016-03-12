@@ -1561,6 +1561,206 @@ System.out.println(e.toString());
 或
 > http://localhost:8080/servlet/PrimitiveServlet 
 
-当请求`PrimitiveServlet`时，你会发现浏览器显示出**Hello. Roses are red.**这几个字，但却不会显示**Violets are blue.**这几个字。因为在`PrimitiveServlet`中，只有第一行字被发送给了客户端。我们将在第三章修正这个问题。
+当请求`PrimitiveServlet`时，你会发现浏览器显示出**Hello. Roses are red.**这几个字，但却不会显示**Violets are blue.**这几个字。
+
+图2-2
+![](images/chapter2-2.png)
+因为在`PrimitiveServlet`中，只有第一行字被发送给了客户端。我们将在第三章修正这个问题。
 
 ### 程序2 ###
+在程序1中，有一个严重的安全隐患问题。当我们调用`ServletProcessor1`的`process`时，分别把`ex02.pyrmont.Request`与`ex02.pyrmont.Response`的实例当作它们的接口`javax.servlet.ServletRequest`与`javax.servlet.ServletResponse`来传递的：
+> ```java
+> try {
+servlet = (Servlet) myClass.newInstance();
+servlet.service((ServletRequest) request,
+(ServletResponse) response);
+}
+>```
+
+这样就会有一个安全问题。如果servlet的开发者知道，你传递给service方法里的request与response的运行时类型就是`ex02.pyrmont.Request`与`ex02.pyrmont.Response`的话，那么，开发者就可以把request与response转换为原本的`ex02.pyrmont.Request`与`ex02.pyrmont.Response`实例。这样就很危险了，开发者拥有`ex02.pyrmont.Request`与`ex02.pyrmont.Response`实例，完全可以对这两个实例的公共方法为所欲为。比如，调用`ex02.pyrmont.Request`实例的`parse`方法，调用`ex02.pyrmont.Response`实例的`sendStaticResource`方法，等等。
+这个安全隐患要怎么解决？把`ex02.pyrmont.Request`实例的`parse`方法，与`ex02.pyrmont.Response`实例的`sendStaticResource`方法设为私有？这肯定是不行的。设为私有后，Servlet容器里其它基础类就无法调用这些方法了。那就把他们的访问策略设为“只能在同一个包下访问”。嗯，这的确是一种解决方法。但是，还有一种更优雅的解决方案：使用门面模式。见下图：
+
+图2-3 Façade classes
+![](images/chapter2-3.png)
+
+在程序2中，我们添加了两个门面类：`RequestFacade`与`ResponseFacade`。
+`RequestFacade`同样实现了`ServletRequest`接口，且它的构造方法里需要传入一个`ServletRequest`对象request。没错，你可能已经猜到了。所有对`ServletRequest`接口方法的操作，在`RequestFacade`里都会映射为对request对象的操作。而在`RequestFacade`里，request对象是私有的，即只有`RequestFacade`能操作，外界根本不知道有request对象的存在，外界只能操作`RequestFacade`实现的接口方法。
+如此一来，我们在给servlet的`service`方法，传递参数时，就不用传递`ex02.pyrmont.Request`了，只用构造一个`RequestFacade`对象，并传递给`service`方法就行。就算servlet开发者能把传入的`Request`对象，转换为`RequestFacade`对象，他也只能操作`RequestFacade`对象的公共方法。这样的话，不就保护了`ex02.pyrmont.Request`里的`parseUri`方法了么！
+`RequestFacade`的代码如“例2.7”所示：
+
+例2.7 RequestFacade类
+```java
+package ex02.pyrmont;
+
+import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.UnsupportedEncodingException;
+import java.util.Enumeration;
+import java.util.Locale;
+import java.util.Map;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletInputStream;
+import javax.servlet.ServletRequest;
+
+public class RequestFacade implements ServletRequest {
+
+  private ServletRequest request = null;
+
+  public RequestFacade(Request request) {
+    this.request = request;
+  }
+
+  /* implementation of the ServletRequest*/
+  public Object getAttribute(String attribute) {
+    return request.getAttribute(attribute);
+  }
+
+  public Enumeration getAttributeNames() {
+    return request.getAttributeNames();
+  }
+
+  public String getRealPath(String path) {
+    return request.getRealPath(path);
+  }
+
+  public RequestDispatcher getRequestDispatcher(String path) {
+    return request.getRequestDispatcher(path);
+  }
+
+  public boolean isSecure() {
+    return request.isSecure();
+  }
+
+  public String getCharacterEncoding() {
+    return request.getCharacterEncoding();
+  }
+
+  public int getContentLength() {
+    return request.getContentLength();
+  }
+
+  public String getContentType() {
+    return request.getContentType();
+  }
+
+  public ServletInputStream getInputStream() throws IOException {
+    return request.getInputStream();
+  }
+
+  public Locale getLocale() {
+    return request.getLocale();
+  }
+
+  public Enumeration getLocales() {
+    return request.getLocales();
+  }
+
+  public String getParameter(String name) {
+    return request.getParameter(name);
+  }
+
+  public Map getParameterMap() {
+    return request.getParameterMap();
+  }
+
+  public Enumeration getParameterNames() {
+    return request.getParameterNames();
+  }
+
+  public String[] getParameterValues(String parameter) {
+    return request.getParameterValues(parameter);
+  }
+
+  public String getProtocol() {
+    return request.getProtocol();
+  }
+
+  public BufferedReader getReader() throws IOException {
+    return request.getReader();
+  }
+
+  public String getRemoteAddr() {
+    return request.getRemoteAddr();
+  }
+
+  public String getRemoteHost() {
+    return request.getRemoteHost();
+  }
+
+  public String getScheme() {
+   return request.getScheme();
+  }
+
+  public String getServerName() {
+    return request.getServerName();
+  }
+
+  public int getServerPort() {
+    return request.getServerPort();
+  }
+
+  public void removeAttribute(String attribute) {
+    request.removeAttribute(attribute);
+  }
+
+  public void setAttribute(String key, Object value) {
+    request.setAttribute(key, value);
+  }
+
+  public void setCharacterEncoding(String encoding)
+    throws UnsupportedEncodingException {
+    request.setCharacterEncoding(encoding);
+  }
+
+}
+```
+
+注意`RequestFacade`类的构造方法。它的构造方法，接收一个`ServletRequest`对象request，然后把这个request对象直接赋给私有变量。`RequestFacade`里的每个方法，跟传入的request对象实现的方法都一样。
+
+`ResponseFacade`类的作用与实现，同上。不再累述。
+
+下面是程序2用到的所有类：
+-	HttpServer2 
+-	Request 
+-	Response 
+-	StaticResourceProcessor 
+-	ServletProcessor2   
+-	Constants 
+
+`HttpServer2`与`HttpServer1`类的唯一区别是，在`await`方法里使用的是`ServletProcessor2`而不是`ServletProcessor1`：
+```java
+if (request.getUri().startsWith("/servlet/")) {
+          ServletProcessor2 processor = new ServletProcessor2();
+          processor.process(request, response);
+        }
+```
+
+
+`ServletProcessor2`与`ServletProcessor1`唯一的是，在`process`方法里使用了门面模式类：
+```java
+Servlet servlet = null;
+    RequestFacade requestFacade = new RequestFacade(request);
+    ResponseFacade responseFacade = new ResponseFacade(response);
+    try {
+      servlet = (Servlet) myClass.newInstance();
+      servlet.service((ServletRequest) requestFacade, (ServletResponse) responseFacade);
+    }
+    catch (Exception e) {
+      System.out.println(e.toString());
+    }
+```
+
+### 运行程序2 ###
+在Windows上运行程序2时，请在命令行中输入：
+> java -classpath ./lib/servlet.jar;./ ex02.pyrmont.HttpServer2
+
+在Linux上，则输入：
+> java -classpath ./lib/servlet.jar:./ ex02.pyrmont.HttpServer2
+
+然后你就可以在浏览器中输入跟程序1一样的URL，进行测试了。
+
+### 本章小结 ###
+本章讨论了两个简单的即能发送静态资源又能发送servlet资源的Servlet容器。同时，我们也介绍了`javax.servlet.Servlet`相关的接口。
+
+
+## 第三章 连接器 ##
