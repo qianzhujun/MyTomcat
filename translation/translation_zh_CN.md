@@ -1764,3 +1764,50 @@ Servlet servlet = null;
 
 
 ## 第三章 连接器 ##
+
+### 概要 ###
+在前面的章节中，我们提到过，Catalina（Tomcat的核心，译注）里有两个重要的模块：容器（container）与连接器（connector）。在本章中，我们将加入连接器，以此来增强上一章中程序的功能。连接器能创建更好的`request`与`response`对象。一个符合Servlet2.3与2.4规范的连接器，必须创建能够传递给`service`方法的`javax.servlet.http.HttpServletRequest `与`javax.servlet.http.HttpServletResponse`实例。
+第二章中的Servlet容器，只能运行实现了`javax.servlet.Servlet`接口的servlet，同时，还要给它的`service`方法传入`javax.servlet.ServletRequest`与`javax.servlet.ServletResponse`实例。因为连接器不知道servlet的具体类型，是实现了`javax.servlet.Servlet`接口的类，还是`javax.servlet.GenericServlet`的子类，亦或`javax.servlet.http.HttpServlet`的子类，所以，连接器必须要能提供`HttpServletRequest`与`HttpServletResponse`的实例。（`javax.servlet.Servlet`与`javax.servlet.GenericServlet`的`service`方法接收的都是`ServletRequest`与`ServletResponse`，而`javax.servlet.http.HttpServlet`有两个重载的`service`方法，即能接收`ServletXXX`，又能接收`HttpServletXXX`，所以，连接器最把稳的做法就是提供`HttpServletXXX`，因为它是`ServletXXX`的子类接口，译注）。
+本章里，我们创建的连接器，是tomcat4（第四章讨论）中默认连接器的一个简单版本。虽然Tomcat4里的默认连接器已经被废弃了，但是它仍然具有很大的学习价值。本章接下来的内容里，“连接器”都代表的是一个模块。
+
+*注意 跟以往的章节不同，本章的连接器跟容器是分开的*
+
+本章里的代码可以在ex03.pyrmont包下找到。连接器部分的代码，可以在ex03.pyrmont.connector与ex03.pyrmont.connector.http下找到。
+从本章开始，都会提供一个bootstrap启动类，以此来启动我们的程序。但是，在本阶段，还暂时没必要提供一个stop的功能，所以，将就着通过关闭命令行窗口来stop我们的程序吧。
+在开始构建本章的程序之前，先让我们来认识一下来自org.apache.catalina.util包里的`StringManager`类吧。它可是负责处理Catalina里各个模块的国际化错误消息。
+
+### StringManager类 ###
+像Tomcat这样的大型程序，需要谨慎地处理各种错误消息。这些错误消息，不管是对系统管理员，还是servlet开发者来说，都是极其有用的。例如，系统管理员能够通过Tomcat打印出的错误信息，轻松地定位到异常发生的地方。对于servlet开发者而言，通过Tomcat抛出的包含特定消息的`javax.servlet.ServletException`异常，就能知道自己的servlet在什么地方出了问题。
+对于错误消息，Tomcat的做法是，把它们存储在一个属性文件里（properties文件）。这样，就能很容易的编辑它们了。但是，Tomcat里有成百上千个类，如果把所有类的错误消息都存储进一个文件里的话，将会是维护工作的噩梦。为了避免这个问题，Tomcat为每个包分配一个属性文件。例如，org.apache.catalina.connector包下的属性文件，只会包含该包下的所有类的错误消息。
+每个`org.apache.catalina.util.StringManager`实例，处理一个属性文件。因此，当Tomcat启动的时候，会有许多的`StringManager`实例，每个实例读取一个特定包下的属性文件。由于Tomcat流行甚广，因此，有必要将错误消息实现多语言化。目前，支持英语、西班牙语、日语，三种语言。英语环境下的属性文件，命名为**LocalStrings.properties**,另外两种语言下的文件名分别命名为**LocalStrings_es.properties**与**LocalStrings_ja.properties**。
+当一个类要在本包下的属性文件里，查找一个错误消息时，首先得获得一个`StringManager`的实例。可是，这样的话，本包下有多少个类需要错误消息的对象，那Tomcat就得一一为它们创建一个对应的`StringManager`实例。这种浪费资源的事情，是无法容忍的。因此，`StringManager`类被设计为，同一个包下是可共享的。如果你熟悉设计模式的话，你可能已经猜到了。没错，单例模式！`StringManager`被设计成了单例。`StringManager`唯一仅有的一个构造方法，被`private`修饰，变成私有的了。如此一来，你就不能再在其它地方通过new关键词来创建它的实例了。要想获得它的实例，只能调用它的静态类方法`getManager`，同时传入包的名称。它的每个实例都存储在一个Hashtable中（一种map结构，译注），包名则作为访问key进行映射。代码如下：
+```java
+private static Hashtable managers = new Hashtable();
+public synchronized static StringManager getManager(String packageName) {
+	StringManager mgr = (StringManager)managers.get(packageName); 
+	if (mgr == null) {
+		mgr = new StringManager(packageName);
+		managers.put(packageName, mgr);
+	}
+	return mgr;
+}
+```
+
+*注意 关于单例模式的文章，你可以在文件夹Articles里找到*
+
+例如，要在ex03.pyrmont.connector.http包下使用`StringManager`，则可以给`getManager`方法传入该包名，来获得对应包的实例。
+> StringManager sm =StringManager.getManager("ex03.pyrmont.connector.http");
+
+在ex03.pyrmont.connector.http包下面，你可以找到以下三个属性文件：LocalStrings.properties, LocalStrings_es.properties 与 LocalStrings_ja.properties。`StringManager`会根据运行时所属语言环境来选择不同的文件。打开LocalStrings.properties文件，第一行（非注释行）内容如下：
+> httpConnector.alreadyInitialized=HTTP connector has already been initialized
+
+要取得一个错误消息，调用`StringManager`的`getString`方法，传入对应的错误代码就可以了。`getString`有很多重载的方法，我们使用的这个如下：
+> public String getString(String key)
+
+所以，我们要得到‘HTTP connector has already been initialized’消息的话，只需要调用
+> getString(" httpConnector.alreadyInitialized")
+
+就可以了。
+
+### 程序代码 ###
+
