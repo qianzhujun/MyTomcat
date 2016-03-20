@@ -1810,4 +1810,23 @@ public synchronized static StringManager getManager(String packageName) {
 就可以了。
 
 ### 程序代码 ###
+从本章开始，所有的程序代码都会以模块的形式进行划分。本章程序包含三个模块：连接器，启动器，核心。
+启动器模块仅仅由一个类`Bootstrap`组成，它的作用是启动程序。
+连接器模块包含的类就要稍微多一点，可以分成5个部分：
+-	连接器模块，与它的支撑类（HttpConnector 与 HttpProcessor）
+-	代表HTTP请求的HttpRequest类，及其支撑类
+-	代表HTTP响应的HttpResponse类，及其支撑类
+-	门面类HttpRequestFacade 与 HttpResponseFacade
+-	常量类Constant
 
+核心模块包含两个类：`ServletProcessor`与`StaticResourceProcessor`。
+图3.1展示了这些类的UML关系图。为了增强可读性，突出重点，我们略去了跟`HttpRequest`与`HttpResponse`相关的类。不过没关系，等到我们分别的讨论这两个类时，你就可以看到他们的UML关系图了。
+
+图3.1
+![](images/chapter3-1.png)
+
+跟第二章的关系图比起来，你会发现，`HttpServer`被划分成了两个类，`HttpConnector`与`HttpProcessor`，同时，`Request`被`HttpRequest`代替了，`Response`也被`HttpResponse`所取代，而且，本章里使用了更多的类。
+在第二章中，`HttpServer`的职责是“等待http请求的到来，同时为之创建request对象，与response对象”。但是，在本章中，“等待http请求的到来”这一任务，被分配给了`HttpConnector`，而“创建request对象，与response对象”，则被分配给了`HttpProcessor`负责。
+在本章中，我们使用实现了`javax.servlet.http.HttpServletRequest`接口的`HttpRequest`类来代表http请求对象。`HttpRequest`对象会被转换为`HttpServletRequest`对象，这样才能传给servlet的`service`方法。因此，`HttpRequest`实例，就必须拥有servlet能使用的一些属性，例如URI,querystring,parameters,cookies 等等。因为，连接器并不知道servlet会使用到哪些属性，所以，连接器必须尽可能多地从http请求里解析到这些属性。但是呢，解析http请求的字符串，是一件很劳民伤财的事情，如果每个servlet想要什么属性，连接器就只解析什么属性的话，将会极大的节省CPU资源的。例如，如果一个servlet并不需要任何请求的参数（即，该servlet不会调用HttpServletRequest 的getParameter, getParameterMap, getParameterNames, getParameterValues等方法），那么，连接器就完全没必要再去从请求的字符串里解析出这些参数。本章的连接器，跟Tomcat的默认连接器一样，除非servlet真的需要（调用了某个获取参数的方法），否则，绝不会去主动解析这些参数，这样就极大的提高了效率。
+
+2016-3-20 11:45:56 翻译到51页SocketInputStream
