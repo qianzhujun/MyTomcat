@@ -1810,4 +1810,210 @@ public synchronized static StringManager getManager(String packageName) {
 就可以了。
 
 ### 程序代码 ###
+从本章开始，所有的程序代码都会以模块的形式进行划分。本章程序包含三个模块：连接器，启动器，核心。
+启动器模块仅仅由一个类`Bootstrap`组成，它的作用是启动程序。
+连接器模块包含的类就要稍微多一点，可以分成5个部分：
+-	连接器模块，与它的支撑类（HttpConnector 与 HttpProcessor）
+-	代表HTTP请求的HttpRequest类，及其支撑类
+-	代表HTTP响应的HttpResponse类，及其支撑类
+-	门面类HttpRequestFacade 与 HttpResponseFacade
+-	常量类Constant
 
+核心模块包含两个类：`ServletProcessor`与`StaticResourceProcessor`。
+图3.1展示了这些类的UML关系图。为了增强可读性，突出重点，我们略去了跟`HttpRequest`与`HttpResponse`相关的类。不过没关系，等到我们分别的讨论这两个类时，你就可以看到他们的UML关系图了。
+
+图3.1
+![](images/chapter3-1.png)
+
+跟第二章的关系图比起来，你会发现，`HttpServer`被划分成了两个类，`HttpConnector`与`HttpProcessor`，同时，`Request`被`HttpRequest`代替了，`Response`也被`HttpResponse`所取代，而且，本章里使用了更多的类。
+在第二章中，`HttpServer`的职责是“等待http请求的到来，同时为之创建request对象，与response对象”。但是，在本章中，“等待http请求的到来”这一任务，被分配给了`HttpConnector`，而“创建request对象，与response对象”，则被分配给了`HttpProcessor`负责。
+在本章中，我们使用实现了`javax.servlet.http.HttpServletRequest`接口的`HttpRequest`类来代表http请求对象。`HttpRequest`对象会被转换为`HttpServletRequest`对象，这样才能传给servlet的`service`方法。因此，`HttpRequest`实例，就必须拥有servlet能使用的一些属性，例如URI,querystring,parameters,cookies 等等。因为，连接器并不知道servlet会使用到哪些属性，所以，连接器必须尽可能多地从http请求里解析到这些属性。但是呢，解析http请求的字符串，是一件很劳民伤财的事情，如果每个servlet想要什么属性，连接器就只解析什么属性的话，将会极大的节省CPU资源的。例如，如果一个servlet并不需要任何请求的参数（即，该servlet不会调用HttpServletRequest 的getParameter, getParameterMap, getParameterNames, getParameterValues等方法），那么，连接器就完全没必要再去从请求的字符串里解析出这些参数。本章的连接器，跟Tomcat的默认连接器一样，除非servlet真的需要（调用了某个获取参数的方法），否则，绝不会去主动解析这些参数，这样就极大的提高了效率。
+
+Tomcat默认的连接器跟我们的连接器一样，都是使用`SocketInputStream`类，从`socket`对象的`InputStream`里读取字节流数据。`socket`对象的`getInputStream`方法，返回一个`java.io.InputStream`实例，`SocketInputStream`对返回的这个`java.io.InputStream`进行包装。`SocketInputStream`类提供了两个重要的方法：**readRequestLine**与**readHeader**，其中readRequestLine方法返回的是HTTP请求的第一行数据，即URI，方法，http版本那些信息。因为，`InputStream`处理字节流，是一次性处理，从第一个字节开始到最后一个字节结束，而且不会回退，所以，`readRequestLine`方法只能调用一次，且必须在`readHeader`方法之前被调用。每次调用`readHeader`方法，都会返回一组http请求头组成的键值对，而http请求头会有很多，所以，`readHeader`方法会被重复调用，只到所有的请求头都被读取出来。`readRequestLine`方法，返回的是一个`HttpRequestLine`实例，而`readHeader`方法返回的是一个`HttpHeader`实例。我们会在接下来的内容里讨论它们。
+
+我们会在`HttpProcessor`实例里，创建一个`HttpRequest`实例，因此，需要提供必要的值。`HttpProcessor`会调用它的`parse`方法解析出HTTP请求里的“请求行”与“请求头”，解析剩下的其它值，则会赋给`HttpProcessor`的相应字段。但是，`parse`方法并不会去解析“请求实体(post里的那些值，译注)”或“请求字符串（get里的那些值，译注）”里的参数，这个任务呢，就交给`HttpRequest`自己了。只有在servlet需要这些参数的时候，`HttpRequest`才会去解析，正如我们之前谈过的。
+
+另一个比前面章节增强的地方是，增加了一个用来启动程序的启动类`ex03.pyrmont.startup.Bootstrap`。
+
+在下面的这些章节中，我们将详细地对程序进行探讨。
+-	开始构建
+-	连接器
+-	创建`HttpRequest`实例
+-	创建`HttpResponse`实例
+-	静态资源与servlet资源的处理
+-	启动程序
+
+### 开始构建 ###
+我们从启动类`ex03.pyrmont.startup.Bootstrap`开始，构建程序。类的代码如“例3.1”所示
+
+例3.1 启动类Bootstrap
+```java
+package ex03.pyrmont.startup;
+
+import ex03.pyrmont.connector.http.HttpConnector;
+
+public final class Bootstrap {
+  public static void main(String[] args) {
+    HttpConnector connector = new HttpConnector();
+    connector.start();
+  }
+}
+```
+
+`Bootstrap`类里的`main`方法，实例化了一个`HttpConnector`对象，并调用它的`start`方法。`HttpConnector`类的代码如“例3.2”所示
+
+例3.2 HttpConnector
+```java
+package ex03.pyrmont.connector.http;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+public class HttpConnector implements Runnable {
+
+  boolean stopped;
+  private String scheme = "http";
+
+  public String getScheme() {
+    return scheme;
+  }
+
+  public void run() {
+    ServerSocket serverSocket = null;
+    int port = 8080;
+    try {
+      serverSocket =  new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"));
+    }
+    catch (IOException e) {
+      e.printStackTrace();
+      System.exit(1);
+    }
+    while (!stopped) {
+      // Accept the next incoming connection from the server socket
+      Socket socket = null;
+      try {
+        socket = serverSocket.accept();
+      }
+      catch (Exception e) {
+        continue;
+      }
+      // Hand this socket off to an HttpProcessor
+      HttpProcessor processor = new HttpProcessor(this);
+      processor.process(socket);
+    }
+  }
+
+  public void start() {
+    Thread thread = new Thread(this);
+    thread.start();
+  }
+}
+```
+### 连接器Connector ###
+例3.2里的`ex03.pyrmont.connector.http.HttpConnector`类代表了一个连接器。它负责创建一个等待http请求到来的server端`socket`。类`HttpConnector`，实现了`java.lang.Runnable`接口，这样做的好处在于，它能独自在一个线程。当你启动程序的时候，会创建一个`HttpConnector`实例，并执行它的`run`方法。
+
+*注意 你可以通过阅读本应用目录下的“Working_with_Threads”一文，来回忆下怎么创建java线程*
+
+`run`方法里包含一个while循环：
+-	等待http请求到来
+-	为每个请求创建一个`HttpProcessor`实例
+-	调用`HttpProcessor`的`process`方法
+
+*注意	`HttpConnector`里的run方法，跟第二章里的`HttpServer1`类的`await`方法，功能类似。*
+
+你会发现，`HttpConnector`类与`ex02.pyrmont.HttpServer1`类很相似。除了一点，从`java.net.ServerSocket`处获得`socket`后的处理步奏： `HttpConnector`里获得socket之后，并不直接操纵它，而是创建一个`HttpProcessor`实例，并调用实例的`process`方法，同时，把socket作为参数，传递进去。
+
+*注意 `HttpConnector`类里还有另外一个方法`getScheme`，该方法返回http*
+
+`HttpProcessor`类的`process`方法，接收一个从http请求处获得的`socket`对象。它负责为每一个达到的http请求，进行如下处理：
+1.	创建一个`HttpRequest`对象
+2.	创建一个`HttpResponse`对象
+3.	解析http请求里的第一行，与请求头信息，并为`HttpRequest`对象赋值。
+4.	根据需要，把`HttpRequest`和`HttpResponse`对象传递给`ServletProcessor`或者`StaticResourceProcessor`。就跟第二章里的一样，`ServletProcessor`会调用所请求的servlet的`service`方法提供服务，而`StaticResourceProcessor`则会提供发送静态资源服务。
+
+`HttpProcessor`类process方法的代码如“例3.3”所示
+
+例3.3 HttpProcessor类的process方法
+```java
+public void process(Socket socket) {
+    SocketInputStream input = null;
+    OutputStream output = null;
+    try {
+      input = new SocketInputStream(socket.getInputStream(), 2048);//构造一个InputStream的包装类SocketInputStream
+      output = socket.getOutputStream();
+
+      // create HttpRequest object and parse
+      request = new HttpRequest(input);
+
+      // create HttpResponse object
+      response = new HttpResponse(output);
+      response.setRequest(request);
+
+      response.setHeader("Server", "Pyrmont Servlet Container");
+
+      parseRequest(input, output);
+      parseHeaders(input);
+
+      //check if this is a request for a servlet or a static resource
+      //a request for a servlet begins with "/servlet/"
+      if (request.getRequestURI().startsWith("/servlet/")) {
+        ServletProcessor processor = new ServletProcessor();
+        processor.process(request, response);
+      }
+      else {
+        StaticResourceProcessor processor = new StaticResourceProcessor();
+        processor.process(request, response);
+      }
+
+      // Close the socket
+      socket.close();
+      // no shutdown for this application
+    }
+    catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+```
+
+`process`方法，首先通过`socket`获得`input stream`与`output stream`。但是，请注意，我们使用的是继承了`java.io.InputStream`的包装类`SocketInputStream`。
+> ```java
+SocketInputStream input = null;
+    OutputStream output = null;
+    try {
+      input = new SocketInputStream(socket.getInputStream(), 2048);
+      output = socket.getOutputStream();
+> ```
+
+接着，`process`方法创建了一个`HttpRequest`实例与`HttpResponse`实例，并设置了`HttpResponse`对`HttpRequest`的引用。
+> ```java
+      request = new HttpRequest(input);
+      // create HttpResponse object
+      response = new HttpResponse(output);
+      response.setRequest(request);
+> ```
+
+本章的`HttpResponse`类，比第二章的`Response`类更健全。例如，你可以调用`setHeader`方法，向客户端反馈一些头信息。
+> `response.setHeader("Server", "Pyrmont Servlet Container");`
+
+接下来，`process`方法调用了对象`HttpProcessor`自己的两个私有方法：
+> ```java
+ parseRequest(input, output);
+ parseHeaders(input);
+> ```
+
+然后，根据URI请求资源的不同，它把`HttpRequest`与`HttpResponse`传给`ServletProcessor`或`StaticResourceProcessor`处理。
+最后，`process`方法关闭连接。
+> `socket.close()`
+
+有一点同样需要注意一下，`HttpProcessor`类使用`org.apache.catalina.util.StringManager`类来发送错误消息。
+> ```java
+  protected StringManager sm =
+    StringManager.getManager("ex03.pyrmont.connector.http");
+>```
+
+`HttpProcessor`里的私有方法`parseRequest`，`parseHeaders`，`normalize`都是用于帮助填充`HttpRequest`里的属性的。我们在接下来的内容中，会讨论它们。
+
+### 创建HttpRequest对象 ###
+2016-3-26 13:01:55 翻译到57页
