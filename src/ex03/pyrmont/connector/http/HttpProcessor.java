@@ -144,7 +144,7 @@ public class HttpProcessor {
     throws IOException, ServletException {
 
     // Parse the incoming request line
-	//解析出到达的http请求行信息
+	//此行的目的在于，通过SocketInputStream的readRequestLine方法解析出到达的http请求行信息，并赋值给HttpRequestLine实例
     input.readRequestLine(requestLine);
     String method =
       new String(requestLine.method, 0, requestLine.methodEnd);
@@ -160,9 +160,9 @@ public class HttpProcessor {
       throw new ServletException("Missing HTTP request URI");
     }
     // Parse any query parameters out of the request URI
-    //从请求的URL里解析出参数的键值对，URL里的参数都是跟在?后面的
+    //判断URI里是否包含请求参数
     int question = requestLine.indexOf("?");
-    if (question >= 0) {
+    if (question >= 0) {//包含请求参数，分离出它们，并把它们赋值给HttpRequest对象
       request.setQueryString(new String(requestLine.uri, question + 1,
         requestLine.uriEnd - question - 1));
       uri = new String(requestLine.uri, 0, question);
@@ -173,8 +173,10 @@ public class HttpProcessor {
     }
 
 
+    
     // Checking for an absolute URI (with the HTTP protocol)
-    if (!uri.startsWith("/")) {
+    //这里的绝对路径并非文件系统上的，这里指不以/开头的请求。我们平时在一个应用下开发，发出的请求都是以/开头的，因为是在同一个域名下。但是，在该域名下请求其它域名的URI，就得是以http://开头了，例如，外连其它网站的图片。
+    if (!uri.startsWith("/")) {// not starting with /, this is an absolute URI
       int pos = uri.indexOf("://");
       // Parsing out protocol and host name
       if (pos != -1) {
@@ -188,7 +190,9 @@ public class HttpProcessor {
       }
     }
 
+    
     // Parse any requested session ID out of the request URI
+    //检查URI的请求参数里是否包含jsessionid参数，如果有，就获取它的值session ID 
     String match = ";jsessionid=";
     int semicolon = uri.indexOf(match);
     if (semicolon >= 0) {
@@ -202,18 +206,20 @@ public class HttpProcessor {
         request.setRequestedSessionId(rest);
         rest = "";
       }
-      request.setRequestedSessionURL(true);
+      request.setRequestedSessionURL(true); //因为请求参数中包含session id，所以这里得设置为true
       uri = uri.substring(0, semicolon) + rest;
-    }
+    }//请求参数中不含session id，session id存在了cookie里
     else {
-      request.setRequestedSessionId(null);
-      request.setRequestedSessionURL(false);
+      request.setRequestedSessionId(null);//因为请求参数中不包含session id，所以这里得设置为null
+      request.setRequestedSessionURL(false);//因为请求参数中不包含session id，所以这里得设置为false
     }
 
     // Normalize URI (using String operations at the moment)
+    //检查URI是否符合规范，如果不符合，能修正的就修正，返回修正后的URI；如果修正不了的话就返回null
     String normalizedUri = normalize(uri);
 
     // Set the corresponding request properties
+    //继续设置HttpRequest的其它属性
     ((HttpRequest) request).setMethod(method);
     request.setProtocol(protocol);
     if (normalizedUri != null) {
@@ -223,6 +229,7 @@ public class HttpProcessor {
       ((HttpRequest) request).setRequestURI(uri);
     }
 
+    //如果URI不符合规范，抛出异常
     if (normalizedUri == null) {
       throw new ServletException("Invalid URI: " + uri + "'");
     }

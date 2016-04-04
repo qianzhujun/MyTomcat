@@ -2016,4 +2016,253 @@ SocketInputStream input = null;
 `HttpProcessor`里的私有方法`parseRequest`，`parseHeaders`，`normalize`都是用于帮助填充`HttpRequest`里的属性的。我们在接下来的内容中，会讨论它们。
 
 ### 创建HttpRequest对象 ###
-2016-3-26 13:01:55 翻译到57页
+`HttpRequest`类实现了`javax.servlet.http.HttpServletRequest`接口，它有一个门面类`HttpRequestFacade`。图3.2显示了跟它相关的类的UML关系图。
+
+图3.2
+![](images/chapter3-2.png)
+
+本章里，`HttpRequest`的很多方法，只是保留了空白，并没有具体实现（我们将在第四章里完全实现所有方法）。不过，没关系，本章里的`HttpRequest`已经能提供servlet所需要的头信息、cookie、参数等信息。这三类信息存储在如下的变量里：
+```java
+protected HashMap headers = new HashMap();
+protected ArrayList cookies = new ArrayList();
+protected ParameterMap parameters = null;
+```
+servlet能从`javax.servlet.http.HttpServletRequest`的以下方法中，取得所需要的信息：getCookies,getDateHeader, getHeader, getHeaderNames, getHeaders, getParameter, getPrameterMap, getParameterNames, and getParameterValues。只要活得头信息、cookie，参数等信息后，实现`HttpRequest`里的其它方法就比较容易了。
+显而易见，此处的难点在于如何解析HTTP请求，并把解析出来的信息赋值给`HttpRequest`。对于头信息与cookie，`HttpProcessor`会在它的`parseHeaders`方法里，调用`HttpRequest`提供的`addHeader`与`addCookie`方法来处理。对于请求参数而言，只会在需要它们的时候，才会调用`HttpRequestp`的`parseParameters`方法进行解析。本节我们会详细的讨论。
+由于，解析HTTP请求是一项非常复杂的任务，所以，本节我们分成如下几个小节：
+-	读取socket的input stream
+-	解析请求行
+-	解析请求头信息
+-	解析cookie
+-	获取请求参数
+
+#### 读取socket的input stream ####
+在第一章与第二章，我们已经做过部分解析HTTP请求的工作了，还记得吗？就在`ex01.pyrmont.HttpRequest`与`ex02.pyrmont.HttpRequest`里。通过调用`java.io.InputStream`的`read`方法，我们获得了包含请求方法、请求URI，HTTP版本的请求行：
+> ```java
+> byte[] buffer = new byte [2048];
+try {
+// input is the InputStream from the socket.
+i = input.read(buffer);
+}
+> ```
+
+在之前的两个程序里，我们并没有试图更进一步的去解析请求。但是，在本章的程序中，我们将使用`ex03.pyrmont.connector.http.SocketInputStream`（org.apache.catalina.connector.http.SocketInputStream的复制）类去进一步解析请求，不仅能获得请求行，而且能获得请求头。
+通过传入一个`InputStream`与一个指定缓存大小的数值，就能构造一个`SocketInputStream`实例。本章中，我们在`ex03.pyrmont.connector.http.HttpProcessor`类的`process`方法里来构造`SocketInputStream`对象，如下片段所示：
+```java
+SocketInputStream input = null;
+OutputStream output = null;
+try {
+input = new SocketInputStream(socket.getInputStream(), 2048);
+...
+```
+正如之前提过的，我们之所以要使用`SocketInputStream`，是因为它有两个很重要的方法：`readRequestLine`与`readHeader`。
+
+#### 解析请求行 ####
+`HttpProcessor`的`process`方法，会调用私有方法`parseRequest`来解析请求行，即HTTP请求的第一行。下面是一个请求行的例子：
+> GET /myApp/ModernServlet?userName=tarzan&password=pwd HTTP/1.1
+
+请求行的第二部分是URI加上一些可选的参数。上面的例子中，URI是：
+> /myApp/ModernServlet
+
+**？**号后面的是请求的参数。所以上诉例子中的请求参数就是：
+> userName=tarzan&password=pwd
+
+请求参数不是必须的，根据需要，可有可无。上面的请求参数包含两个键值对：userName/tarzan 与 password/pwd。在servlet（jsp）的开发过程中，参数`jsessionid`用来传递session标识符。session标识符通常放在cookie中，但是也有例外，例如，在浏览器被禁止使用cookie的情况下，就可以把session标识符放在请求参数里。
+在`parseRequest`方法运行时，变量`request`指向一个`HttpRequest`实例。`parseRequest`方法通过解析请求行而获得许多信息，并把这些信息赋给`HttpRequest`实例。现在，就让我们近距离的观察下`parseRequest`方法：
+
+例3.4  parseRequest方法
+```java
+  private void parseRequest(SocketInputStream input, OutputStream output)
+    throws IOException, ServletException {
+
+    // Parse the incoming request line
+	//解析出到达的http请求行信息
+    input.readRequestLine(requestLine);
+    String method =
+      new String(requestLine.method, 0, requestLine.methodEnd);
+    String uri = null;
+    String protocol = new String(requestLine.protocol, 0, requestLine.protocolEnd);
+
+    // Validate the incoming request line
+    //校验到达的http请求行信息是否符合规范，即是否有请求方法、请求URL
+    if (method.length() < 1) {
+      throw new ServletException("Missing HTTP request method");
+    }
+    else if (requestLine.uriEnd < 1) {
+      throw new ServletException("Missing HTTP request URI");
+    }
+    // Parse any query parameters out of the request URI
+    //从请求的URL里解析出参数的键值对，URL里的参数都是跟在?后面的
+    int question = requestLine.indexOf("?");
+    if (question >= 0) {
+      request.setQueryString(new String(requestLine.uri, question + 1,
+        requestLine.uriEnd - question - 1));
+      uri = new String(requestLine.uri, 0, question);
+    }
+    else {
+      request.setQueryString(null);
+      uri = new String(requestLine.uri, 0, requestLine.uriEnd);
+    }
+
+
+    // Checking for an absolute URI (with the HTTP protocol)
+    if (!uri.startsWith("/")) {
+      int pos = uri.indexOf("://");
+      // Parsing out protocol and host name
+      if (pos != -1) {
+        pos = uri.indexOf('/', pos + 3);
+        if (pos == -1) {
+          uri = "";
+        }
+        else {
+          uri = uri.substring(pos);
+        }
+      }
+    }
+
+    // Parse any requested session ID out of the request URI
+    String match = ";jsessionid=";
+    int semicolon = uri.indexOf(match);
+    if (semicolon >= 0) {
+      String rest = uri.substring(semicolon + match.length());
+      int semicolon2 = rest.indexOf(';');
+      if (semicolon2 >= 0) {
+        request.setRequestedSessionId(rest.substring(0, semicolon2));
+        rest = rest.substring(semicolon2);
+      }
+      else {
+        request.setRequestedSessionId(rest);
+        rest = "";
+      }
+      request.setRequestedSessionURL(true);
+      uri = uri.substring(0, semicolon) + rest;
+    }
+    else {
+      request.setRequestedSessionId(null);
+      request.setRequestedSessionURL(false);
+    }
+
+    // Normalize URI (using String operations at the moment)
+    String normalizedUri = normalize(uri);
+
+    // Set the corresponding request properties
+    ((HttpRequest) request).setMethod(method);
+    request.setProtocol(protocol);
+    if (normalizedUri != null) {
+      ((HttpRequest) request).setRequestURI(normalizedUri);
+    }
+    else {
+      ((HttpRequest) request).setRequestURI(uri);
+    }
+
+    if (normalizedUri == null) {
+      throw new ServletException("Invalid URI: " + uri + "'");
+    }
+  }
+```
+`parseRequest`方法首先调用了`SocketInputStream`类的`readRequestLine`方法：
+> input.readRequestLine(requestLine);
+
+其中，`requestLine`是`HttpProcessor`内部里`HttpRequestLine`的一个实例：
+> private HttpRequestLine requestLine = new HttpRequestLine();
+
+调用`SocketInputStream`的`readRequestLine`方法，目的在于，通过它来对`HttpRequestLine`实例进行各种赋值。因此，紧接着，`parseRequest`就能获得请求的方法、URI、以及协议：
+> ```java
+> String method =
+new String(requestLine.method, 0, requestLine.methodEnd);
+String uri = null;
+String protocol = new String(requestLine.protocol, 0,
+requestLine.protocolEnd);
+> ```
+
+然而，URI的解析有点麻烦，URI后面可能跟着请求参数（？号的字符串）。因此，`parseRequest`首先检查是否有请求参数，如果有，就分离出它们，并通过调用`setQueryString`方法，将请求参数赋给`HttpRequest`对象：
+> ```java
+// Parse any query parameters out of the request URI
+int question = requestLine.indexOf("?");
+if (question >= 0) { // there is a query string.
+request.setQueryString(new String(requestLine.uri, question + 1,
+requestLine.uriEnd - question - 1));
+uri = new String(requestLine.uri, 0, question);
+}
+else {
+request.setQueryString (null);
+uri = new String(requestLine.uri, 0, requestLine.uriEnd);
+}
+> ```
+
+大多数URI都指向一个相对路径，但是，也有URI指向绝对路径，例如：
+> http://www.brainysoftware.com/index.html?name=Tarzan
+
+*译注 这里的绝对路径并非文件系统上的，这里指不以/开头的请求。我们平时在一个应用下开发，发出的请求都是以/开头的，因为是在同一个域名下。但是，在该域名下请求其它域名的URI，就得是以http://开头了，例如，外连其它网站的图片。大家可以捕获下http请求看看*
+
+`parseRequest`同样需要判断是相对路径还是绝对路径：
+> ```java
+ // Checking for an absolute URI (with the HTTP protocol)
+    if (!uri.startsWith("/")) {
+      int pos = uri.indexOf("://");
+      // Parsing out protocol and host name
+      if (pos != -1) {
+        pos = uri.indexOf('/', pos + 3);
+        if (pos == -1) {
+          uri = "";
+        }
+        else {
+          uri = uri.substring(pos);
+        }
+      }
+    }
+>```
+
+由于请求参数里也可能有包含session标识符的jsessionid参数，因此，`parseRequest`方法同样需要检查session标识符。如果`jsessionid`参数存成的话，`parseRequest`方法就会获取它的值（session标识符），并通过调用`setRequestedSessionId`方法，把值赋给`HttpRequest`：
+> ```java
+> // Parse any requested session ID out of the request URI
+    String match = ";jsessionid=";
+    int semicolon = uri.indexOf(match);
+    if (semicolon >= 0) {
+      String rest = uri.substring(semicolon + match.length());
+      int semicolon2 = rest.indexOf(';');
+      if (semicolon2 >= 0) {
+        request.setRequestedSessionId(rest.substring(0, semicolon2));
+        rest = rest.substring(semicolon2);
+      }
+      else {
+        request.setRequestedSessionId(rest);
+        rest = "";
+      }
+      request.setRequestedSessionURL(true);
+      uri = uri.substring(0, semicolon) + rest;
+    }
+    else {
+      request.setRequestedSessionId(null);
+      request.setRequestedSessionURL(false);
+    }
+>```
+
+如果请求参数中包含`jsessionid`参数，那也就意味着，session标识符不在cookie里，因此，就需要给`setRequestSessionURL`方法传递true，否则，传递false，同时，给`setRequestedSessionURL`传递null。
+
+到此为止，我们已经把`jsessionid`从URI里剥离出去了。
+
+接下来，`parseRequest`方法会把解析出的URI传递给`normalize`方法。`normalize`方法的作用在于，修正URI里不合规范的地方，例如，不能有保留字符‘%’等。只有URI符合规范，`normalize`才会返回原始URI或修正后的URI，否则只会返回null。如果返回null的话，`parseRequest`会在接下来的处理中抛出一个`Invalid URI`的异常。
+
+最后，`parseRequest`方法会继续为`HttpRequest`对象赋值：
+> ```
+// Set the corresponding request properties
+    ((HttpRequest) request).setMethod(method);
+    request.setProtocol(protocol);
+    if (normalizedUri != null) {
+      ((HttpRequest) request).setRequestURI(normalizedUri);
+    }
+    else {
+      ((HttpRequest) request).setRequestURI(uri);
+    }
+>```
+
+同时，检查URI是否符合规范，不符合就抛出异常：
+> ```
+>   if (normalizedUri == null) {
+      throw new ServletException("Invalid URI: " + uri + "'");
+    }
+> ```
+
+#### 解析请求头信息 ####
+2016-4-9 11:18:08 翻译到64页
