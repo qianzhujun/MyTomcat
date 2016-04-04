@@ -2016,4 +2016,46 @@ SocketInputStream input = null;
 `HttpProcessor`里的私有方法`parseRequest`，`parseHeaders`，`normalize`都是用于帮助填充`HttpRequest`里的属性的。我们在接下来的内容中，会讨论它们。
 
 ### 创建HttpRequest对象 ###
-2016-3-26 13:01:55 翻译到57页
+`HttpRequest`类实现了`javax.servlet.http.HttpServletRequest`接口，它有一个门面类`HttpRequestFacade`。图3.2显示了跟它相关的类的UML关系图。
+
+图3.2
+![](images/chapter3-2.png)
+
+本章里，`HttpRequest`的很多方法，只是保留了空白，并没有具体实现（我们将在第四章里完全实现所有方法）。不过，没关系，本章里的`HttpRequest`已经能提供servlet所需要的头信息、cookie、参数等信息。这三类信息存储在如下的变量里：
+```java
+protected HashMap headers = new HashMap();
+protected ArrayList cookies = new ArrayList();
+protected ParameterMap parameters = null;
+```
+servlet能从`javax.servlet.http.HttpServletRequest`的以下方法中，取得所需要的信息：getCookies,getDateHeader, getHeader, getHeaderNames, getHeaders, getParameter, getPrameterMap, getParameterNames, and getParameterValues。只要活得头信息、cookie，参数等信息后，实现`HttpRequest`里的其它方法就比较容易了。
+显而易见，此处的难点在于如何解析HTTP请求，并把解析出来的信息赋值给`HttpRequest`。对于头信息与cookie，`HttpProcessor`会在它的`parseHeaders`方法里，调用`HttpRequest`提供的`addHeader`与`addCookie`方法来处理。对于请求参数而言，只会在需要它们的时候，才会调用`HttpRequestp`的`parseParameters`方法进行解析。本节我们会详细的讨论。
+由于，解析HTTP请求是一项非常复杂的任务，所以，本节我们分成如下几个小节：
+-	读取socket的input stream
+-	解析请求行
+-	解析请求头信息
+-	解析cookie
+-	获取请求参数
+
+#### 读取socket的input stream ####
+在第一章与第二章，我们已经做过部分解析HTTP请求的工作了，还记得吗？就在`ex01.pyrmont.HttpRequest`与`ex02.pyrmont.HttpRequest`里。通过调用`java.io.InputStream`的`read`方法，我们获得了包含请求方法、请求URI，HTTP版本的请求行：
+> ```java
+> byte[] buffer = new byte [2048];
+try {
+// input is the InputStream from the socket.
+i = input.read(buffer);
+}
+> ```
+
+在之前的两个程序里，我们并没有试图更进一步的去解析请求。但是，在本章的程序中，我们将使用`ex03.pyrmont.connector.http.SocketInputStream`（org.apache.catalina.connector.http.SocketInputStream的复制）类去进一步解析请求，不仅能获得请求行，而且能获得请求头。
+通过传入一个`InputStream`与一个指定缓存大小的数值，就能构造一个`SocketInputStream`实例。本章中，我们在`ex03.pyrmont.connector.http.HttpProcessor`类的`process`方法里来构造`SocketInputStream`对象，如下片段所示：
+```java
+SocketInputStream input = null;
+OutputStream output = null;
+try {
+input = new SocketInputStream(socket.getInputStream(), 2048);
+...
+```
+正如之前提过的，我们之所以要使用`SocketInputStream`，是因为它有两个很重要的方法：`readRequestLine`与`readHeader`。
+
+#### 解析请求行 ####
+2016-4-4 11:54:01 翻译到58页
