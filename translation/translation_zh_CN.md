@@ -2058,6 +2058,7 @@ input = new SocketInputStream(socket.getInputStream(), 2048);
 正如之前提过的，我们之所以要使用`SocketInputStream`，是因为它有两个很重要的方法：`readRequestLine`与`readHeader`。
 
 #### 解析请求行 ####
+<<<<<<< HEAD
 `HttpProcessor`的`process`方法，会调用私有方法`parseRequest`来解析请求行，即HTTP请求的第一行。下面是一个请求行的例子：
 > GET /myApp/ModernServlet?userName=tarzan&password=pwd HTTP/1.1
 
@@ -2266,3 +2267,6 @@ uri = new String(requestLine.uri, 0, requestLine.uriEnd);
 
 #### 解析请求头信息 ####
 2016-4-9 11:18:08 翻译到64页
+=======
+2016-4-4 11:54:01 翻译到58页
+>>>>>>> refs/remotes/origin/master
