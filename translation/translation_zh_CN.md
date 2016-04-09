@@ -2058,7 +2058,6 @@ input = new SocketInputStream(socket.getInputStream(), 2048);
 正如之前提过的，我们之所以要使用`SocketInputStream`，是因为它有两个很重要的方法：`readRequestLine`与`readHeader`。
 
 #### 解析请求行 ####
-<<<<<<< HEAD
 `HttpProcessor`的`process`方法，会调用私有方法`parseRequest`来解析请求行，即HTTP请求的第一行。下面是一个请求行的例子：
 > GET /myApp/ModernServlet?userName=tarzan&password=pwd HTTP/1.1
 
@@ -2266,7 +2265,131 @@ uri = new String(requestLine.uri, 0, requestLine.uriEnd);
 > ```
 
 #### 解析请求头信息 ####
-2016-4-9 11:18:08 翻译到64页
-=======
-2016-4-4 11:54:01 翻译到58页
->>>>>>> refs/remotes/origin/master
+我们使用`HttpHeader`类来代表请求头。在第四章的时候，又来详细讨论该类。现在，只要知道以下几点即可：
+-	可以直接调用该类的无参数构造函数实例化。
+-	获得HttpHeader实例后，可以将它传递给`SocketInputStream`的`readHeader`方法进行处理。如果有请求头信息，`readHeader`方法就会将对应的信息赋值给`HttpHeader`实例，否则，`HttpHeader`实例的`nameEnd`与`valueEnd`属性都会被设为0.
+-	要获得请求头名称与值的话，需要使用如下方式：
+	
+> String name = new String(header.name, 0, header.nameEnd);
+> String value = new String(header.value, 0, header.valueEnd)
+
+`parseHeaders`方法里使用一个while循环来持续地读取`SocketInputStream`里的头信息，直到全部读取完。while循环首先构造了一个`HttpHeader`实例，然后把它传递给`readHeader`方法进行赋值处理：
+```java
+HttpHeader header = new HttpHeader();
+// Read the next header
+input.readHeader(header);
+```
+可以通过判断`HttpHeader`实例的`nameEnd`和`valueEnd`属性值来判断是否还有下一个请求头：
+```java
+ // Read the next header
+      input.readHeader(header);
+      if (header.nameEnd == 0) {
+        if (header.valueEnd == 0) {
+          return;
+        }
+        else {
+          throw new ServletException
+            (sm.getString("httpProcessor.parseHeaders.colon"));
+        }
+      }
+```
+如果还有下一个请求头，则请求头的名称和值可以通过如下获得：
+> String name = new String(header.name, 0, header.nameEnd);
+String value = new String(header.value, 0, header.valueEnd);
+
+获得请求头的名称和值以后，就可以通过调用`HttpRequest`的`addHeader`方法，把它们添加到HashMap里了。
+> request.addHeader(name, value);
+
+有些请求头，同样需要以set的形式赋值给request。例如，请求头`content-length`就需要以set的形式赋值，因为servlet可能会调用`javax.servlet.ServletRequest`的`getContentLength`方法获取`content-length`的值。cookie请求头也是一样的，它们同样需要添加到cookie集合里。如下代码所示：
+```java
+// do something for some headers, ignore others.
+      if (name.equals("cookie")) {
+        Cookie cookies[] = RequestUtil.parseCookieHeader(value);
+        for (int i = 0; i < cookies.length; i++) {
+          if (cookies[i].getName().equals("jsessionid")) {
+            // Override anything requested in the URL
+            if (!request.isRequestedSessionIdFromCookie()) {
+              // Accept only the first session id cookie
+              request.setRequestedSessionId(cookies[i].getValue());
+              request.setRequestedSessionCookie(true);
+              request.setRequestedSessionURL(false);
+            }
+          }
+          request.addCookie(cookies[i]);
+        }
+      }
+      else if (name.equals("content-length")) {
+        int n = -1;
+        try {
+          n = Integer.parseInt(value);
+        }
+        catch (Exception e) {
+          throw new ServletException(sm.getString("httpProcessor.parseHeaders.contentLength"));
+        }
+        request.setContentLength(n);
+      }
+      else if (name.equals("content-type")) {
+        request.setContentType(value);
+      }
+```
+
+别着急，我们马上就会讨论到cookie的解析。
+
+#### 解析Cookies ####
+浏览器会以HTTP请求头的形式来发送Cookies。请求头的名字叫做“cookie”，它的值是由cookie名称/值组成的键值对。例如，如下cookie请求头包含两个cookie键值对：
+> Cookie: userName=budi; password=pwd;
+
+Cookie的解析，依靠`org.apache.catalina.util.RequestUtil`的`parseCookieHeader`方法来完成。该方法接收cookie请求头作为参数，并返回一个由` javax.servlet.http.Cookie`组成的数组。数组的长度就是cookie请求头里键值对的数量。如例3.5所示。
+
+例3.5 parseCookieHeader方法
+```java
+public static Cookie[] parseCookieHeader(String header) {
+		if ((header == null) || (header.length() < 1))
+			return (new Cookie[0]);
+		ArrayList cookies = new ArrayList();
+		while (header.length() > 0) {
+			int semicolon = header.indexOf(';');
+			if (semicolon < 0)
+				semicolon = header.length();
+			if (semicolon == 0)
+				break;
+			String token = header.substring(0, semicolon);
+			if (semicolon < header.length())
+				header = header.substring(semicolon + 1);
+			else
+				header = "";
+			try {
+				int equals = token.indexOf('=');
+				if (equals > 0) {
+					String name = token.substring(0, equals).trim();
+					String value = token.substring(equals + 1).trim();
+					cookies.add(new Cookie(name, value));
+				}
+			} catch (Throwable e) {
+				;
+			}
+		}
+		return ((Cookie[]) cookies.toArray(new Cookie[cookies.size()]));
+	}
+```
+下面是`HttpProcessor`里的`parseHeader`方法李具体处理cookie的部分：
+```java
+ if (name.equals("cookie")) {
+        Cookie cookies[] = RequestUtil.parseCookieHeader(value);
+        for (int i = 0; i < cookies.length; i++) {
+          if (cookies[i].getName().equals("jsessionid")) {
+            // Override anything requested in the URL
+            if (!request.isRequestedSessionIdFromCookie()) {
+              // Accept only the first session id cookie
+              request.setRequestedSessionId(cookies[i].getValue());
+              request.setRequestedSessionCookie(true);
+              request.setRequestedSessionURL(false);
+            }
+          }
+          request.addCookie(cookies[i]);
+        }
+      }
+```
+
+#### 获取参数 ####
+2016-4-10 11:45:19 翻译到第67页。
