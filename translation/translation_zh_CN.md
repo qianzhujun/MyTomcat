@@ -1,4 +1,4 @@
-# 待定 #
+# Tomcat剖析 #
 
 ## 第一章 一个简单的Web服务器 ##
 本章介绍了java web servers是如何工作的。Web服务器也叫作HTTP（超文本传输协议）服务器，因为服务器使用HTTP协议与客户端（通常是浏览器）进行通信。Java Web服务器使用两个重要的类java.net.Socket 与java.net.ServerSocket来进行HTTP通信。因此，本章首先讨论HTTP，与这两个重要的类，然后，继续介绍简单的Web服务器。
@@ -2392,4 +2392,276 @@ public static Cookie[] parseCookieHeader(String header) {
 ```
 
 #### 获取参数 ####
-2016-4-10 11:45:19 翻译到第67页。
+Tomcat不会主动去解析URI里，或请求body里的参数。只用当servlet调用`javax.servlet.http.HttpServletRequest `类的`getParameter`，`getParameterMap`，`getParameterNames`，或`getParameterValues`方法时，tomcat才会解析参数。因此，在上诉四个方法的具体实现中，第一件事都是去调用`parseParameter`方法。
+参数只会被解析一次，因为，需要调用`SocketInputStream`来从头到尾的读取请求body的字节流（SocketInputStream的字节流只读取一次后就没有了，译注），以此解析出在请求body里的参数。`HttpRequest`使用boolean类型的`parsed`，来标识是否已经解析过参数。
+参数既可以放在URI里，也可以放在请求body里。如果是以get方式提交的请求（调用servlet的GET方法），那么所有的参数都在URI里。如果是以post方式提交的请求（调用servlet的POST方法），除了在URI里会有参数外，请求body里也可能会包含参数。它们最终都会被解析成**键值对**存储在`HashMap`里。`Servlet`编写者，能通过`getParameterMap`等方法，获取到参数信息。但是，这里就有一个弊端。Servlet编写者是不允许改变参数值的。因此，就需要一个特别的HashMap：`org.apache.catalina.util.ParameterMap`。
+`ParameterMap`类扩展了`java.util.HashMap`类，同时，还使用了一个boolean类型的`locked`变量，以此标识是否可以对参数信息进行操作。只要当`locked`的值为**false**时，才可以对参数键值对进行添加、更新、移除操作，否则，就会抛出`IllegalStateException`异常。但是，对参数键值对的读取操作，则没有任何限制。`ParameterMap`的代码如例3.6所示。它重写了跟添加、修改、移除相关的方法，只有当`locked`为false时才能被调用。
+
+例3.6 org.apache.Catalina.util.ParameterMap
+```java
+public final class ParameterMap extends HashMap {
+
+
+    // ----------------------------------------------------------- Constructors
+
+
+    /**
+     * Construct a new, empty map with the default initial capacity and
+     * load factor.
+     */
+    public ParameterMap() {
+
+        super();
+
+    }
+
+
+    /**
+     * Construct a new, empty map with the specified initial capacity and
+     * default load factor.
+     *
+     * @param initialCapacity The initial capacity of this map
+     */
+    public ParameterMap(int initialCapacity) {
+
+        super(initialCapacity);
+
+    }
+
+
+    /**
+     * Construct a new, empty map with the specified initial capacity and
+     * load factor.
+     *
+     * @param initialCapacity The initial capacity of this map
+     * @param loadFactor The load factor of this map
+     */
+    public ParameterMap(int initialCapacity, float loadFactor) {
+
+        super(initialCapacity, loadFactor);
+
+    }
+
+
+    /**
+     * Construct a new map with the same mappings as the given map.
+     *
+     * @param map Map whose contents are dupliated in the new map
+     */
+    public ParameterMap(Map map) {
+
+        super(map);
+
+    }
+
+
+    // ------------------------------------------------------------- Properties
+
+
+    /**
+     * The current lock state of this parameter map.
+     */
+    private boolean locked = false;
+
+
+    /**
+     * Return the locked state of this parameter map.
+     */
+    public boolean isLocked() {
+
+        return (this.locked);
+
+    }
+
+
+    /**
+     * Set the locked state of this parameter map.
+     *
+     * @param locked The new locked state
+     */
+    public void setLocked(boolean locked) {
+
+        this.locked = locked;
+
+    }
+
+
+    /**
+     * The string manager for this package.
+     */
+    private static final StringManager sm =
+        StringManager.getManager("org.apache.catalina.util");
+
+
+    // --------------------------------------------------------- Public Methods
+
+
+
+    /**
+     * Remove all mappings from this map.
+     *
+     * @exception IllegalStateException if this map is currently locked
+     */
+    public void clear() {
+
+        if (locked)
+            throw new IllegalStateException
+                (sm.getString("parameterMap.locked"));
+        super.clear();
+
+    }
+
+
+    /**
+     * Associate the specified value with the specified key in this map.  If
+     * the map previously contained a mapping for this key, the old value is
+     * replaced.
+     *
+     * @param key Key with which the specified value is to be associated
+     * @param value Value to be associated with the specified key
+     *
+     * @return The previous value associated with the specified key, or
+     *  <code>null</code> if there was no mapping for key
+     *
+     * @exception IllegalStateException if this map is currently locked
+     */
+    public Object put(Object key, Object value) {
+
+        if (locked)
+            throw new IllegalStateException
+                (sm.getString("parameterMap.locked"));
+        return (super.put(key, value));
+
+    }
+
+
+    /**
+     * Copy all of the mappings from the specified map to this one.  These
+     * mappings replace any mappings that this map had for any of the keys
+     * currently in the specified Map.
+     *
+     * @param map Mappings to be stored into this map
+     *
+     * @exception IllegalStateException if this map is currently locked
+     */
+    public void putAll(Map map) {
+
+        if (locked)
+            throw new IllegalStateException
+                (sm.getString("parameterMap.locked"));
+        super.putAll(map);
+
+    }
+
+
+    /**
+     * Remove the mapping for this key from the map if present.
+     *
+     * @param key Key whose mapping is to be removed from the map
+     *
+     * @return The previous value associated with the specified key, or
+     *  <code>null</code> if there was no mapping for that key
+     *
+     * @exception IllegalStateException if this map is currently locked
+     */
+    public Object remove(Object key) {
+
+        if (locked)
+            throw new IllegalStateException
+                (sm.getString("parameterMap.locked"));
+        return (super.remove(key));
+
+    }
+
+
+}
+```
+
+接下来，让我们看看`parseParameters`方法是如何工作的。
+由于参数既可以在URI里，也可以在请求body里，所以，就需要`parseParameters`方法对两者都进行检查。一旦解析后，就会把参数放进`parameters`变量里，并置`parsed`变量为true。因此，该方法会首先检查`parsed`变量的值：
+> ```
+> if (parsed)
+return;
+>```
+
+紧接着，`parseParameters`方法会创建一个`ParameterMap`类型的变量`results`，用来指向`parameters`，如果`parameters`为null，则新建一个。
+> ```
+> ParameterMap results = parameters;
+if (results == null)
+results = new ParameterMap();
+>```
+
+接下来，将`parameterMap`的lock置为false，以便对其进行操作
+> `results.setLocked(false);`
+
+
+然后，检查请求的编码类型，如果没有，则设置一个默认的编码：
+> ```
+> String encoding = getCharacterEncoding();
+if (encoding == null)
+encoding = "ISO-8859-1";
+>```
+
+随之，`parseParameters`方法会使用`org.apache.Catalina.util.RequestUtil`类的`parseParameters`方法去试着解析请求字符串：
+```
+// Parse any parameters specified in the query string
+String queryString = getQueryString();
+try {
+	RequestUtil.parseParameters(results, queryString, encoding);
+}
+catch (UnsupportedEncodingException e) {
+	;
+}
+```
+然后，会试着判断请求body里是否含有参数。如果用户是以post方式提交的请求，就会有内容，且内容的的类型为`application/x-www-form-urlencoded`。下面是解析请求body的代码：
+```
+ // Parse any parameters specified in the input stream
+    String contentType = getContentType();
+    if (contentType == null)
+      contentType = "";
+    int semicolon = contentType.indexOf(';');
+    if (semicolon >= 0) {
+      contentType = contentType.substring(0, semicolon).trim();
+    }
+    else {
+      contentType = contentType.trim();
+    }
+    if ("POST".equals(getMethod()) && (getContentLength() > 0)
+      && "application/x-www-form-urlencoded".equals(contentType)) {
+      try {
+        int max = getContentLength();
+        int len = 0;
+        byte buf[] = new byte[getContentLength()];
+        ServletInputStream is = getInputStream();
+        while (len < max) {
+          int next = is.read(buf, len, max - len);
+          if (next < 0 ) {
+            break;
+          }
+          len += next;
+        }
+        is.close();
+        if (len < max) {
+          throw new RuntimeException("Content length mismatch");
+        }
+        RequestUtil.parseParameters(results, buf, encoding);
+      }
+      catch (UnsupportedEncodingException ue) {
+        ;
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Content read fail");
+      }
+    }
+```
+
+最后，`parseParameters`方法会给`ParameterMap`上锁，并将`parsed`置为true，同时，将解析结果`results`赋给`parameters`。
+```
+// Store the final results
+results.setLocked(true);
+parsed = true;
+parameters = results;
+```
+
+#### 创建相应对象（HttpResponse） ####
+2016-4-30 11:11:04 翻译到71页
