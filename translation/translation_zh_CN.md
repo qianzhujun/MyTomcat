@@ -2697,4 +2697,45 @@ return writer;
 }
 ```
 #### 静态资源处理器和servlet处理器 ####
-2016-5-28 11:27:27 翻译到73页。
+本章中的`ServletProcessor`与第二章中的`ex02.pyrmont.ServletProcessor`类相似，都只有一个`process`方法。但是，本章中`ex03.pyrmont.connector.ServletProcessor`类的`process`方法接收的参数是`HttpRequest`和`HttpResponse`，而并非`Request`与`Response`。如下签名所示：
+> `public void process(HttpRequest request, HttpResponse response)`
+
+另外，本章的`process`方法使用门面类`HttpRequestFacade`与`HttpResponseFacade`代替了`request`与`response`。而且，当调用完`servlet`的`service`方法后，还会调用`HttpResponse`类的`finishResponse`方法：
+```java
+servlet = (Servlet) myClass.newInstance();
+HttpRequestFacade requestPacade = new HttpRequestFacade(request);
+HttpResponseFacade responseFacade = new
+HttpResponseFacade(response);
+servlet.service(requestFacade, responseFacade);
+((HttpResponse) response).finishResponse(); 
+```
+
+本章的`StaticResourceProcessor`跟第二章中的`ex02.pyrmont.StaticResourceProcessor`几乎是一样的，不再累述。
+
+### 运行程序 ###
+Windows环境下，你可以这样启动
+> java -classpath ./lib/servlet.jar;./ ex03.pyrmont.startup.Bootstrap
+
+Linux环境下，则是这样（用的是：而不是;）
+> java -classpath ./lib/servlet.jar:./ ex03.pyrmont.startup.Bootstrap
+
+要显示index.html，则在浏览器中键入
+> http://localhost:808O/index.html 
+
+如果要调用PrimitiveServlet，则键入
+> http://localhost:8080/servlet/PrimitiveServlet 
+
+你将会在浏览器中看到以下返回信息：
+> Hello. Roses are red.
+Violets are blue.
+
+*注意* 在第二章中调用PrimitiveServlet时，是不会出现第二行的！
+
+你也可以调用本章新增加的ModernServet（源码在webroot目录下）来测试打印请求的详细信息，例如
+> http://localhost:8080/servlet/ModernServlet?userName=tarzan&password=pwd 
+
+### 本章小结 ###
+本章我们学习了connectors是如何工作的。当然，本章的connectors只是Tomcat4中默认connectors的一个简单版本。你肯定已经发现了，默认的connectors已经被标识为过时的了，因为它的效率一点都不高。例如，所有的HTTP请求头都会被解析，不管它们在servlet中是否会被用得到。由于默认的connectors效率问题，它已经被Coyote（一个更快的connector）所替代。当然，默认的connector也并非一无是处。它可以作为一个很好的学习工具，我们将在第四章中深入讨论它。
+
+## 第四章 Tomcat的默认连接器 ##
+2016-5-29 09:20:30 翻译到第四章 
